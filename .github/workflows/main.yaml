@@ -1,0 +1,15 @@
+name: Main Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-miniscutil:
+    uses: "EdAyers/sss/.github/workflows/libraries.yaml@main"
+    with:
+      lib: miniscutil
+    secrets: inherit

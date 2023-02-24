@@ -1,20 +1,17 @@
 # This workflow will install Python dependencies, run tests and lint with a variety of Python versions
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 
-name: Python Packages
+name: Python build package
 
 on:
-  workflow_dispatch:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
+  workflow_call:
+    inputs:
+      lib:
+        required: true
+        type: string
 
 jobs:
   build:
-    strategy:
-      matrix:
-        lib: [miniscutil, dxd, uxu]
     name: "Python"
     runs-on: ubuntu-latest
     steps:
@@ -35,21 +32,18 @@ jobs:
       - name: Install Hatch
         run: pipx install hatch
       - name: Run tests
-        working-directory: "./${{ matrix.lib }}"
+        working-directory: "./${{ inputs.lib }}"
         run: hatch run test:no-cov
       # [todo]
       # - name: Build documentation
-      #   working-directory: "./${{ matrix.lib }}"
+      #   working-directory: "./${{ inputs.lib }}"
       #   run: hatch run docs:build
       # - name: Upload docs artifact
       #   uses: actions/upload-pages-artifact@v1
       #   with:
-      #     path: ${{matrix.lib}}/docs/_build/html
+      #     path: ${{inputs.lib}}/docs/_build/html
 
   publish:
-    strategy:
-      matrix:
-        lib: [miniscutil, dxd, uxu]
     runs-on: ubuntu-latest
     needs: build
     environment: production
@@ -62,11 +56,11 @@ jobs:
       - name: Install Hatch
         run: pipx install hatch
       - name: Build dist
-        working-directory: "./${{matrix.lib}}"
+        working-directory: "./${{inputs.lib}}"
         run: hatch build
       - name: Publish on PyPI
         run: hatch publish
-        working-directory: "./${{matrix.lib}}"
+        working-directory: "./${{inputs.lib}}"
 
   # [todo]
   # deploy:
