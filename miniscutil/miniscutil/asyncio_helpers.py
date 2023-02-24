@@ -14,6 +14,7 @@ from typing import (
     Iterator,
     Optional,
     TypeVar,
+    Union,
 )
 import concurrent.futures
 import os
@@ -197,7 +198,7 @@ class Daemon:
 
 
 async def wrap_iterator(
-    it: Callable[[], Iterator[T]] | Iterator[T], executor=None
+    it: Union[Callable[[], Iterator[T]], Iterator[T]], executor=None
 ) -> AsyncIterator[T]:
     """Make a blocking iterator into an async iterator by running the iterator in a separate thread.
 
