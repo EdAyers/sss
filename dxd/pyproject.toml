@@ -38,6 +38,7 @@ path = "dxd/__about__.py"
 dependencies = [
   "pytest",
   "pytest-cov",
+  "miniscutil @ {root:uri}/../miniscutil",
 ]
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=dxd --cov=tests {args}"
