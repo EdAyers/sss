@@ -67,4 +67,5 @@ exclude_lines = [
 dependencies = [
   "pytest", "pytest-cov", "hypothesis", "pytest-snapshot",
   "numpy",
+  "miniscutil @ {root:uri}/../miniscutil",
 ]
