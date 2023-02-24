@@ -1,9 +1,9 @@
 import pytest
 from sqlite3 import Connection
 import sqlite3
-from tinyorm import engine
+from dxd import engine
 
-from tinyorm.sqlite_engine import SqliteEngine
+from dxd.sqlite_engine import SqliteEngine
 
 
 @pytest.fixture(scope="module")
@@ -17,7 +17,7 @@ def sqlite_engine():
 def postgres_engine():
     try:
         import psycopg
-        from tinyorm.postgres_engine import PsycopgEngine
+        from dxd.postgres_engine import PsycopgEngine
     except ImportError:
         pytest.skip("psycopg not installed")
 

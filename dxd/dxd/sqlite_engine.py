@@ -8,7 +8,7 @@ import uuid
 from miniscutil import as_optional, register_adapter
 from .engine import Engine
 
-logger = logging.getLogger("tinyorm.sqlite3")
+logger = logging.getLogger("dxd.sqlite3")
 
 
 def ident(x):

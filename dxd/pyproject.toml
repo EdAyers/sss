@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tinyorm"
+name = "dxd"
 description = ''
 readme = "README.md"
 requires-python = ">=3.9"
@@ -27,12 +27,12 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/EdAyers/sss/tinyorm#readme"
-Issues = "https://github.com/EdAyers/sss/tinyorm/issues"
-Source = "https://github.com/EdAyers/sss/tinyorm"
+Documentation = "https://github.com/EdAyers/sss/dxd#readme"
+Issues = "https://github.com/EdAyers/sss/dxd/issues"
+Source = "https://github.com/EdAyers/sss/dxd"
 
 [tool.hatch.version]
-path = "tinyorm/__about__.py"
+path = "dxd/__about__.py"
 
 [tool.hatch.envs.default]
 dependencies = [
@@ -40,7 +40,7 @@ dependencies = [
   "pytest-cov",
 ]
 [tool.hatch.envs.default.scripts]
-cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=tinyorm --cov=tests {args}"
+cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=dxd --cov=tests {args}"
 no-cov = "cov --no-cov {args}"
 
 [[tool.hatch.envs.test.matrix]]
@@ -50,7 +50,7 @@ python = ["39", "310", "311"]
 branch = true
 parallel = true
 omit = [
-  "tinyorm/__about__.py",
+  "dxd/__about__.py",
 ]
 
 [tool.coverage.report]

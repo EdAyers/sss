@@ -6,9 +6,9 @@ import psycopg
 import sqlite3
 from typing import Optional
 
-from tinyorm import col, Table, engine, transaction, Engine, Schema
-from tinyorm.postgres_engine import PsycopgEngine
-from tinyorm.sqlite_engine import SqliteEngine
+from dxd import col, Table, engine, transaction, Engine, Schema
+from dxd.postgres_engine import PsycopgEngine
+from dxd.sqlite_engine import SqliteEngine
 
 
 class BlobStatus(Enum):

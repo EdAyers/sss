@@ -14,6 +14,9 @@ Status: experimental.
 - Async and sync execution calls (WIP)
 
 ## Other libraries
+
+You should use one of these instead:
+
 - [Peewee](http://docs.peewee-orm.com/en/latest/)
 - [SQLAlchemy](https://www.sqlalchemy.org)
 - [Piccolo](https://piccolo-orm.com)

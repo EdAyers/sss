@@ -9,7 +9,7 @@ from miniscutil.ofdict import MyJsonEncoder, TypedJsonDecoder
 from .expr import Expr, AbstractExpr
 from .column import Column
 
-logger = logging.getLogger("tinyorm")
+logger = logging.getLogger("dxd")
 
 S = TypeVar("S")
 R = TypeVar("R")

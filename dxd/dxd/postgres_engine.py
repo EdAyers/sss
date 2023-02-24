@@ -10,7 +10,7 @@ from miniscutil import as_optional
 
 from .engine import Engine
 
-logger = logging.getLogger("tinyorm.postgres")
+logger = logging.getLogger("dxd.postgres")
 
 
 class PostgresEncodable:

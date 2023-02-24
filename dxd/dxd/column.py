@@ -13,7 +13,7 @@ from .engine import engine_context
 from miniscutil.ofdict import MyJsonEncoder, TypedJsonDecoder
 from .expr import Expr, AbstractExpr
 
-logger = logging.getLogger("tinyorm")
+logger = logging.getLogger("dxd")
 
 S = TypeVar("S")
 R = TypeVar("R")

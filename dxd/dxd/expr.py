@@ -6,7 +6,7 @@ from typing import Any, Callable, Generic, Optional, Type, TypeVar, Union, overl
 from miniscutil.adapt import adapt, restore
 from miniscutil.ofdict import MyJsonEncoder, TypedJsonDecoder
 
-logger = logging.getLogger("tinyorm")
+logger = logging.getLogger("dxd")
 
 S = TypeVar("S")
 R = TypeVar("R")
