@@ -13,3 +13,17 @@ jobs:
     with:
       lib: miniscutil
     secrets: inherit
+
+  build-dxd:
+    uses: "EdAyers/sss/.github/workflows/libraries.yaml@main"
+    needs: build-miniscutil
+    with:
+      lib: dxd
+    secrets: inherit
+
+  build-uxu:
+    uses: "EdAyers/sss/.github/workflows/libraries.yaml@main"
+    needs: build-miniscutil
+    with:
+      lib: uxu
+    secrets: inherit
