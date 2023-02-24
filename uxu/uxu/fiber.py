@@ -8,7 +8,6 @@ from typing import (
     Coroutine,
     Generic,
     Optional,
-    ParamSpec,
     Protocol,
     TypeVar,
     Union,
@@ -30,6 +29,7 @@ from .vdom import (
     reconcile_lists,
 )
 import logging
+from .compat import ParamSpec
 
 logger = logging.getLogger("uxu")
 

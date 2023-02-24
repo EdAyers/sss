@@ -1,11 +1,11 @@
 from functools import partial, singledispatch
-from typing import Any, Literal, Optional, ParamSpec, Sequence, TypeVar, Union, overload
+from typing import Any, Literal, Optional, Sequence, TypeVar, Union, overload
 
 from .textnode import TextNodeSpec
 from .vdom import Html, NormSpec, normalise_html
 from .element import ElementSpec
 from .fiber import Component, FiberSpec
-
+from .compat import ParamSpec
 
 P = ParamSpec("P")
 
