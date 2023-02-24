@@ -27,9 +27,9 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/unknown/tinyorm#readme"
-Issues = "https://github.com/unknown/tinyorm/issues"
-Source = "https://github.com/unknown/tinyorm"
+Documentation = "https://github.com/EdAyers/sss/tinyorm#readme"
+Issues = "https://github.com/EdAyers/sss/tinyorm/issues"
+Source = "https://github.com/EdAyers/sss/tinyorm"
 
 [tool.hatch.version]
 path = "tinyorm/__about__.py"

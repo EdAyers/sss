@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2023-present E.W.Ayers <edward.ayers@outlook.com>
+# SPDX-FileCopyrightText: 2023-present E.W.Ayers <contact@edayers.com>
 #
 # SPDX-License-Identifier: MIT
 
@@ -17,3 +17,5 @@ from .misc import (
 from .adapt import adapt, restore, register_adapter
 from .current import Current
 from .type_util import as_optional, is_optional
+from .sum import Sum
+from .dispatch import Dispatcher, classdispatch

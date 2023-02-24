@@ -13,6 +13,7 @@ Collection of miscellaneous functions and methods that I wish were in core. I th
 - `deep.py` implements a deepcopy-like reduction system for traversing, mapping and serializing arbitrary python objects.
 - `deepeq.py` implements a deep-equality algorithm.
 - `current.py` is a base class for implementing the singleton pattern.
+- `sum.py` discriminated sum type.
 
 **Table of Contents**
 

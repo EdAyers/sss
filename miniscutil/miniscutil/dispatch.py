@@ -88,8 +88,9 @@ def classdispatch(func):
     """Dynamic dispatch on a class.
 
     Similar to ``functools.singledispatch``, except treats the first argument as a class to be dispatched on.
-    [todo] switch to using dispatcher
     """
+    # [todo] switch to using dispatcher
+    # [todo] add support for register(Optional) and register(Union) and register(list[int]).
     funcname = getattr(func, "__name__", "class dispatch function")
     sdfunc = singledispatch(func)
 

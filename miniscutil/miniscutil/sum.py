@@ -3,37 +3,6 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, Iterable, TypeVar
 
-X = TypeVar("X")
-Y = TypeVar("Y")
-
-
-@dataclass
-class DictDiff(Generic[X, Y]):
-    add: set[str]
-    rm: set[str]
-    mod: dict[str, tuple[X, Y]]
-
-    def is_empty(self):
-        return len(self.add) == 0 and len(self.rm) == 0 and len(self.mod) == 0
-
-
-def dict_diff(d1: dict[str, X], d2: dict[str, Y]) -> DictDiff[X, Y]:
-    k1 = set(d1.keys())
-    k2 = set(d2.keys())
-    return DictDiff(
-        add=k2.difference(k1),
-        rm=k1.difference(k2),
-        mod={k: (v1, d2[k]) for k, v1 in d1.items() if (k in d2) and (d2[k] != v1)},
-    )
-
-
-def map_keys(f: Callable[[Any], Any], d: dict):
-    return {f(k): v for k, v in d.items()}
-
-
-def map_values(f: Callable[[Any], Any], d: dict):
-    return {k: f(v) for k, v in d.items()}
-
 
 A = TypeVar("A")
 B = TypeVar("B")

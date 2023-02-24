@@ -17,8 +17,10 @@ from .vdom import (
     set_vdom_context,
 )
 from .patch import ModifyChildrenPatch, Patch
-from .util import MessageQueue
-logger = logging.getLogger('hxh')
+from miniscutil.asyncio_helpers import MessageQueue
+
+logger = logging.getLogger("hxh")
+
 
 @dataclass
 class EventArgs:

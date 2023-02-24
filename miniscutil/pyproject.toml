@@ -10,7 +10,7 @@ requires-python = ">=3.7"
 license = "MIT"
 keywords = []
 authors = [
-  { name = "E.W.Ayers", email = "edward.ayers@outlook.com" },
+  { name = "E.W.Ayers", email = "contact@edayers.com" },
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -29,9 +29,9 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/unknown/miniscutil#readme"
-Issues = "https://github.com/unknown/miniscutil/issues"
-Source = "https://github.com/unknown/miniscutil"
+Documentation = "https://github.com/EdAyers/sss/miniscutil#readme"
+Issues = "https://github.com/EdAyers/sss/miniscutil/issues"
+Source = "https://github.com/EdAyers/sss/miniscutil"
 
 [tool.hatch.version]
 path = "miniscutil/__about__.py"

@@ -1,3 +1,3 @@
-# SPDX-FileCopyrightText: 2023-present E.W.Ayers <edward.ayers@outlook.com>
+# SPDX-FileCopyrightText: 2023-present E.W.Ayers <contact@edayers.com>
 #
 # SPDX-License-Identifier: MIT

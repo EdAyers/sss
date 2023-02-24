@@ -27,9 +27,9 @@ dependencies = []
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/unknown/hxh#readme"
-Issues = "https://github.com/unknown/hxh/issues"
-Source = "https://github.com/unknown/hxh"
+Documentation = "https://github.com/EdAyers/sss/hxh"
+Issues = "https://github.com/EdAyers/sss/issues"
+Source = "https://github.com/EdAyers/sss/hxh"
 
 [tool.hatch.version]
 path = "hxh/__about__.py"

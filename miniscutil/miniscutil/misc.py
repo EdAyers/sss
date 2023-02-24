@@ -4,8 +4,6 @@ from datetime import datetime, timezone
 from subprocess import check_output, CalledProcessError
 from typing import (
     IO,
-    Any,
-    BinaryIO,
     Callable,
     Dict,
     Generic,
