@@ -2,7 +2,7 @@
 
 At the moment these are:
 - dxd: a post-ORM for postgres and sqlite
-- hxh: a pure-python web framework similar in design to Pynecone.
+- uxu: a pure-python web framework similar in design to Pynecone.
 - miniscutil: utility library
 
 But there are more I want to add.

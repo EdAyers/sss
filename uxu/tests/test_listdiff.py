@@ -1,4 +1,4 @@
-from hxh.listdiff import diff, Reorder
+from uxu.listdiff import diff, Reorder
 from hypothesis import given, assume
 import hypothesis.strategies as hs
 from itertools import product

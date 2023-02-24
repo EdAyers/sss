@@ -19,7 +19,7 @@ from .vdom import (
 from .patch import ModifyChildrenPatch, Patch
 from miniscutil.asyncio_helpers import MessageQueue
 
-logger = logging.getLogger("hxh")
+logger = logging.getLogger("uxu")
 
 
 @dataclass

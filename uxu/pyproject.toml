@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hxh"
+name = "uxu"
 description = ''
 readme = "README.md"
 requires-python = ">=3.7"
@@ -27,12 +27,12 @@ dependencies = []
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/EdAyers/sss/hxh"
+Documentation = "https://github.com/EdAyers/sss/uxu"
 Issues = "https://github.com/EdAyers/sss/issues"
-Source = "https://github.com/EdAyers/sss/hxh"
+Source = "https://github.com/EdAyers/sss/uxu"
 
 [tool.hatch.version]
-path = "hxh/__about__.py"
+path = "uxu/__about__.py"
 
 [tool.hatch.envs.default]
 dependencies = [
@@ -40,7 +40,7 @@ dependencies = [
   "pytest-cov",
 ]
 [tool.hatch.envs.default.scripts]
-cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=hxh --cov=tests {args}"
+cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=uxu --cov=tests {args}"
 no-cov = "cov --no-cov {args}"
 
 [[tool.hatch.envs.test.matrix]]
@@ -50,7 +50,7 @@ python = ["37", "38", "39", "310", "311"]
 branch = true
 parallel = true
 omit = [
-  "hxh/__about__.py",
+  "uxu/__about__.py",
 ]
 
 [tool.coverage.report]
