@@ -63,7 +63,6 @@ exclude_lines = [
 [tool.hatch.envs.test]
 dependencies = [
   "pytest", "pytest-cov", "hypothesis", "pytest-snapshot",
-  "numpy", "pandas", "pillow",
-  "torch; python_version < '3.11'",
+  "numpy",
   "psycopg"
 ]
