@@ -5,7 +5,7 @@ from functools import partial
 from typing import Any, Callable, Generic, Iterable, Optional, TypeVar, Union
 from difflib import SequenceMatcher
 
-from .util import map_keys, Sum
+from miniscutil import map_keys, Sum
 
 A = TypeVar("A")
 B = TypeVar("B")

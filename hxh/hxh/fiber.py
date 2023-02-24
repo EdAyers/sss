@@ -31,7 +31,7 @@ from .vdom import (
 )
 import logging
 
-logger = logging.getLogger('hxh')
+logger = logging.getLogger("hxh")
 
 
 S = TypeVar("S")

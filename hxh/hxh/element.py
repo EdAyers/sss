@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar, Union
 from .rendering import EventHandler, RenderedAttrVal
-from .util import dict_diff
+from miniscutil import dict_diff
 import logging
 from .patch import ModifyAttributesPatch, ModifyChildrenPatch, ReplaceElementPatch
 from .vdom import (
