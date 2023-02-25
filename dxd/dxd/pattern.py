@@ -105,3 +105,14 @@ class Pattern(Generic[S]):
 
     def to_expr(self) -> "Expr":
         return Expr.binary(", ", self.items)
+
+
+def sum(inner) -> Any:
+    """Runs the SUM reduction on the given select pattern."""
+    inner = Pattern(inner)
+    if len(inner.items) != 1:
+        raise ValueError(
+            f"Pattern {inner} has {len(inner.items)} items but needs 1 for a SUM."
+        )
+    item = inner.items[0]
+    return Pattern([Expr("SUM(?)", [item])], lambda x: x[0])

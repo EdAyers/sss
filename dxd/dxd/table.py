@@ -304,6 +304,7 @@ class Table(Generic[T]):
         ...
 
     def update(self, values, where=True, returning=None):  # type: ignore
+        # [todo] if 'where : T', set where to be T's primary key.
         def mk_setter(key, value) -> "Expr":
             assert isinstance(key, Column)  # [todo] strings for column names are ok too
             return Expr(f"{key.name} = ?", [value])
