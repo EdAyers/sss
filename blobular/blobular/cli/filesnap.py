@@ -20,10 +20,6 @@ from stat import S_IREAD, S_IRGRP, S_IROTH
 BLOCK_SIZE = 2**20
 
 
-def get_store():
-    return AppState.current().store
-
-
 def get_filestore():
     return AppState.current().local_file_store
 
@@ -55,7 +51,7 @@ class FileSnapshot:
     @property
     def has_local_cache(self):
         """Returns true if the file has already been cached."""
-        return get_store().has(self.digest)
+        return get_filestore().has(self.digest)
 
     @property
     def local_cache_path(self):
@@ -84,7 +80,7 @@ class FileSnapshot:
 
     def open(self) -> IO[bytes]:
         """Open the snapshot in read mode. (writing to a snapshot is not allowed.)"""
-        return get_store().open(digest=self.digest)
+        return get_filestore().open(digest=self.digest)
 
     def restore_at(self, path: Path, overwrite: Optional[bool] = None) -> Path:
         """Restore the file at the given path. Returns the path of the restored file.
@@ -138,7 +134,12 @@ class FileSnapshot:
             self.download()
         if self.relpath is None:
             raise ValueError(f"Can't restore a snapshot without a specific path.")
-        project_path = Path(project_path or Settings.current().workspace_dir)
+        project_path = project_path or Settings.current().workspace_dir
+        if project_path is None:
+            raise ValueError(
+                f"Can't restore a snapshot without a workspace directory to place relative to."
+            )
+        project_path = Path(project_path)
         abspath = project_path / self.relpath
         assert abspath.is_relative_to(project_path)
         return self.restore_at(abspath, overwrite=overwrite)
@@ -169,7 +170,7 @@ class FileSnapshot:
             relpath = None
         time = datetime.now()
         with open(path, "rb") as fd:
-            r = get_store().add(fd)
+            r = get_filestore().add(fd)
         snap = FileSnapshot(
             digest=r.digest,
             time=time,
@@ -184,11 +185,13 @@ class FileSnapshot:
         return AppState.current().cloud_store.has(self.digest)
 
     def upload(self):
+        if not AppState.current().store.has(self.digest):
+            raise RuntimeError(f"file {self.digest} was not added")
         try:
             if AppState.current().store.push(self.digest):
                 user_info(f"Uploaded {self.name}.")
         except ConnectionError as e:
-            logger.error(f"Error uploading {self.name}: {e}")
+            logger.error(f"no connection: {e}")
 
 
 @dataclass
@@ -263,14 +266,10 @@ class DirectorySnapshot:
     @classmethod
     def snap(cls, path, workspace_dir=None):
         path = Path(path).resolve()
-        if workspace_dir is None:
-            workspace_dir = Settings.current().workspace_dir
-        if path.is_relative_to(workspace_dir):
+        workspace_dir = workspace_dir or Settings.current().workspace_dir
+        if workspace_dir is not None and path.is_relative_to(workspace_dir):
             relpath = path.relative_to(workspace_dir)
         else:
-            user_info(
-                f"Directory {path} is outside workspace directory {workspace_dir}. Not storing a relpath."
-            )
             relpath = None
 
         def rec(p: Path):
@@ -295,6 +294,7 @@ class DirectorySnapshot:
         return snap
 
     def upload(self):
+        # [todo] add progress bar here.
         for file in self.files:
             file.upload()
         # [todo] need an extra step here where we upload a blob containing the directory info.

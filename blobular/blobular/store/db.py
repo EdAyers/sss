@@ -80,3 +80,9 @@ class OnDatabaseBlobStore(AbstractBlobStore):
 
     def iter(self):
         yield from self.table.select(select=BlobContent.digest)
+
+    def get_info(self, digest):
+        row = self.table.select_one(where=BlobContent.digest == digest)
+        if row is None:
+            return None
+        return BlobInfo(digest=row.digest, content_length=row.content_length)

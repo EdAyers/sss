@@ -5,6 +5,7 @@ from miniscutil import human_size
 
 from blobular.util import chunked_read
 from .abstract import AbstractBlobStore, BlobInfo, get_digest_and_length
+
 # [todo] shouldn't really depend on cli
 from ..cli.cloudutils import request
 from ..cli.console import tape_progress
@@ -49,7 +50,8 @@ class CloudBlobStore(AbstractBlobStore):
         tape: IO[bytes],
         digest: Optional[str] = None,
         content_length: Optional[int] = None,
-        label=None,
+        label: Optional[str] = None,
+        content_type: Optional[str] = None,
     ) -> BlobInfo:
         """Upload the blob to the cloud.
 
@@ -73,7 +75,7 @@ class CloudBlobStore(AbstractBlobStore):
             message=f"Uploading {pp_label} ({human_size(content_length)}) {digest}.",
             description="Uploading",
         ) as tape:
-            r = request("PUT", "/blob", data=chunked_read(tape))
+            r = request("PUT", "/blob", files={"file": tape})
         r.raise_for_status()
         if label is not None:
             logger.debug(f"Uploaded {pp_label} {digest}.")
@@ -109,3 +111,10 @@ class CloudBlobStore(AbstractBlobStore):
 
     def delete(self, digest: str) -> None:
         request("DELETE", f"/blob/{digest}")
+
+    def get_info(self, digest) -> Optional[BlobInfo]:
+        r = request("HEAD", f"/blob/{digest}")
+        r.raise_for_status()
+        print(r.text)
+        j = r.json()
+        return BlobInfo(j["digest"], j["content_length"])

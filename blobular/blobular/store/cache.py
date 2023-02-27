@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import IO, Literal
 from dxd import col, Schema, Table, sum
-
+import logging
 from blobular.store.abstract import AbstractBlobStore, BlobInfo, get_digest_and_length
 
 """ Caching blobstore """
+logger = logging.getLogger("blobular")
 
 
 @dataclass
@@ -37,9 +38,13 @@ class CacheBlobStore:
         self.recalc_cache_size()
 
     def recalc_cache_size(self) -> int:
-        size = self.table.select_one(
-            where=CacheRow.is_cached == True, select=sum(CacheRow.content_length)
+        size = list(
+            self.table.select(
+                where=CacheRow.is_cached == True, select=sum(CacheRow.content_length)
+            )
         )
+        assert len(size) == 1
+        size = size[0]
         assert isinstance(size, int)
         self.size = size
         return size
@@ -64,11 +69,39 @@ class CacheBlobStore:
     def get_info(self, digest):
         row = self.table.select_one(where=CacheRow.digest == digest)
         if row is None:
-            return self.store.get_info(digest)
+            # it might exist in cache
+            info = self.cache.get_info(digest)
+            if info is not None:
+                # discovered something in cache that we didn't know about.
+                self.table.insert_one(
+                    CacheRow(
+                        digest=info.digest,
+                        content_length=info.content_length,
+                        is_cached=True,
+                    )
+                )
+                return info
+            info = self.store.get_info(digest)
+            if info is not None:
+                self.table.insert_one(
+                    CacheRow(
+                        digest=info.digest,
+                        content_length=info.content_length,
+                        is_cached=False,
+                        is_stored=True,
+                    )
+                )
+                return info
+            return None
+
         return BlobInfo(digest=row.digest, content_length=row.content_length)
 
     def has(self, digest):
-        return self.get_info(digest) is not None
+        return (
+            self.table.has(CacheRow.digest == digest)
+            or self.cache.has(digest)
+            or self.store.has(digest)
+        )
 
     def evict(self, space_needed: int):
         start_size = self.size
@@ -79,9 +112,9 @@ class CacheBlobStore:
             for L in [2**20, 0]:
                 # heuristic: evict the big blobs first
                 for row in self.table.select(
-                    where=CacheRow.is_cached == True
-                    and CacheRow.is_stored == True
-                    and CacheRow.content_length > L,
+                    where=(CacheRow.is_cached == True)
+                    & (CacheRow.is_stored == True)
+                    & (CacheRow.content_length > L),
                     order_by=CacheRow.last_accessed,
                     descending=False,
                 ):
@@ -154,12 +187,17 @@ class CacheBlobStore:
                 tape, digest=info.digest, content_length=info.content_length
             )
 
-    def push(self, digest):
+    def push(self, digest: str):
+        info = self.get_info(
+            digest
+        )  # [todo] this adds extra rows if something got added to cache
         row = self.table.select_one(
             where=CacheRow.digest == digest,
         )
-        assert row is not None
+        if row is None:
+            raise LookupError(f"no blob in cache with digest {digest}")
         if row.is_stored:
+            logger.info(f"blob already stored: {digest}")
             return
         assert row.is_cached
         with self.cache.open(row.digest) as f:
@@ -169,13 +207,13 @@ class CacheBlobStore:
         )
 
     def flush(self):
-        digests = list(
+        rows = list(
             self.table.select(
-                where=CacheRow.is_cached == True and CacheRow.is_stored == False
+                where=(CacheRow.is_cached == True) & (CacheRow.is_stored == False)
             )
         )
-        for digest in digests:
-            self.push(digest)
+        for row in rows:
+            self.push(row.digest)
 
 
 class SizedBlobStore(AbstractBlobStore):
@@ -188,6 +226,7 @@ class SizedBlobStore(AbstractBlobStore):
     ):
         self.small = small
         self.big = big
+        self.threshold = threshold
 
     def add(self, tape: IO[bytes], *, digest=None, content_length=None):
         if digest is None or content_length is None:

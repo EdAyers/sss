@@ -1,13 +1,17 @@
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 import sqlite3
+import sys
 from typing import Any, Dict, Optional
+from miniscutil.misc import chunked_read, human_size
 import typer
 from dataclasses import dataclass, fields, asdict
 import asyncio
 import platform
 from enum import Enum
-from .login import (
+from blobular.cli.console import tape_progress
+from blobular.cli.state import AppState
+from blobular.cli.login import (
     AuthenticationError,
     generate_api_key,
     loopback_login,
@@ -126,7 +130,7 @@ def keygen(label: Optional[str] = None):
 
 
 @app.command()
-def snapshot(path: Path = typer.Argument(..., exists=True)):
+def add(path: Path = typer.Argument(..., exists=True)):
     """Upload the given file or directory to the cloud, returning a digest that can be used to reference data in code."""
     if path.is_file():
         snap = FileSnapshot.snap(path)
@@ -138,6 +142,39 @@ def snapshot(path: Path = typer.Argument(..., exists=True)):
         print(snap.digest)
     else:
         raise ValueError(f"Can't snapshot {path}.")
+
+
+@app.command()
+def open(digest: str, path: Optional[Path] = None):
+    # [todo] if it exists in the filestore, just symlink it.
+    s = AppState.current()
+    head = s.store.get_info(digest)
+    if head is None:
+        logger.error("digest not found")
+        return
+    if path is not None:
+        g = path.open("wb")
+    else:
+        if sys.stdout.isatty():
+            logger.error(
+                f"refusing to dump to terminal stdout, please specify a path or pipe the output."
+            )
+            return
+        g = nullcontext(sys.stdout.buffer)
+    try:
+        with g as g:
+            with s.store.open(digest) as f:
+                with tape_progress(
+                    f,
+                    head.content_length,
+                    message=f"Downloading ({human_size(head.content_length)}) {digest}",
+                    description="Downloading",
+                ) as tape:
+                    for b in chunked_read(tape):
+                        g.write(b)
+
+    except LookupError:
+        logger.error("digest not found")
 
 
 @app.command()

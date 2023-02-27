@@ -1,6 +1,6 @@
 from io import BytesIO
 from typing import IO, Any, Optional
-from blobular.store.abstract import BlobInfo, get_digest_and_length
+from blobular.store.abstract import BlobInfo, get_digest_and_length, AbstractBlobStore
 
 """
 Example client setup:
@@ -15,7 +15,7 @@ client = boto3.client('s3',
 """
 
 
-class S3BlobStore:
+class S3BlobStore(AbstractBlobStore):
     client: Any
 
     def __init__(self, bucket_name, client):

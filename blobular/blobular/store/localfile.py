@@ -23,7 +23,7 @@ class LocalFileBlobStore(AbstractBlobStore):
 
     def iter_blobs(self):
         """Iterate all of the digests of the blobs that exist on disk."""
-        p = self.local_cache_dir / "blobs"
+        p = self.local_cache_dir
         for bp in p.iterdir():
             if bp.is_file():
                 digest = bp.name
@@ -32,11 +32,16 @@ class LocalFileBlobStore(AbstractBlobStore):
     def local_file_cache_path(self, digest: str):
         """Gets the place where the blob would be stored. Note that this doesn't guarantee existence."""
         p = self.local_cache_dir
-        return p / "blobs" / digest
+        return p / digest
 
     def has(self, digest: str) -> bool:
         """Checks whether the blob exists __locally__."""
         return self.local_file_cache_path(digest).exists()
+
+    def get_info(self, digest) -> Optional[BlobInfo]:
+        p = self.local_file_cache_path(digest)
+        content_length = p.stat().st_size
+        return BlobInfo(digest, content_length)
 
     def delete(self, digest):
         """Deletes the given blob from the local cache.

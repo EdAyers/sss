@@ -11,6 +11,9 @@ from pydantic import BaseModel, SecretStr
 from starlette.requests import Request
 from starlette.datastructures import URL
 from blobular.api.settings import Settings
+from blobular.store.s3 import S3BlobStore
+from blobular.store.cache import SizedBlobStore
+from blobular.store.localfile import LocalFileBlobStore
 
 from blobular.registry import BlobClaim
 from blobular.api.authentication import (
@@ -36,15 +39,27 @@ from blobular.store import (
 from miniscutil import chunked_read
 from blobular.api.authentication import get_user
 from dxd import transaction
+from pathlib import Path
+import boto3
 
 app = FastAPI()
 logger = logging.getLogger("blobular")
 
 
 def get_blobstore(request: Request, db: Db = Depends(get_db)) -> AbstractBlobStore:
+    cfg = Settings.current()
     table = BlobContent.create_table("apiresults", db.engine)
-    store = OnDatabaseBlobStore(table)
-    return store
+    small = OnDatabaseBlobStore(table)
+    # dir = Path("cache")
+    # assert dir.exists(), f"please make {dir.absolute()}"
+    # big = LocalFileBlobStore(dir)
+    client = boto3.client(
+        "s3",
+        aws_access_key_id=cfg.aws_access_key_id,
+        aws_secret_access_key=cfg.aws_secret_access_key.get_secret_value(),
+    )
+    big = S3BlobStore(bucket_name="blobular", client=client)
+    return SizedBlobStore(small, big, threshold=0)
 
 
 @app.exception_handler(AuthenticationError)
@@ -147,6 +162,7 @@ async def get_blobs(user=Depends(get_user), db: Db = Depends(get_db)):
 async def put_blob(
     file: UploadFile,  # [todo] make optional, so you can change settings on a blob without uploading.
     is_public: bool = False,
+    label: Optional[str] = None,
     blobstore: AbstractBlobStore = Depends(get_blobstore),
     user=Depends(get_user),
     db: Db = Depends(get_db),
@@ -154,8 +170,8 @@ async def put_blob(
     """Upload a blob."""
     info = blobstore.add(file.file)
     # [todo] perform in single query
-    with transaction():
-        where = BlobClaim.user_id == user.id and BlobClaim.digest == info.digest
+    with transaction(db.engine):
+        where = (BlobClaim.user_id == user.id) & (BlobClaim.digest == info.digest)
         b = db.blobs.select_one(where=where)
         assert b is None or b.content_length == info.content_length
         if b is None:
@@ -184,13 +200,14 @@ async def put_blob(
 
 def get_claim(digest: str, user: User, db: Db):
     claim = db.blobs.select_one(
-        where=BlobClaim.digest == digest
-        and (BlobClaim.user_id == user.id or BlobClaim.is_public == True)
+        where=(BlobClaim.digest == digest)
+        & ((BlobClaim.user_id == user.id) | (BlobClaim.is_public == True))
     )
     if claim is None:
         raise HTTPException(
             status_code=404, detail=f"no blob with digest {digest} found"
         )
+    assert claim.digest == digest, "oops"
     return claim
 
 

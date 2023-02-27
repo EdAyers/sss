@@ -14,4 +14,9 @@ class BlobClaim(Schema):
     accesses: int = col(default=0)
     is_public: bool = col(default=False)
     last_accessed: datetime = col(default_factory=datetime.utcnow)
+
+    created: datetime = col(default_factory=datetime.utcnow)
+    label: Optional[str] = col(default=None)
+    content_type: Optional[str] = col(default=None)
+
     # [todo] access control goes here; eg groupid and chmod
