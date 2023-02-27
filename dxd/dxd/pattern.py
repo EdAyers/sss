@@ -21,6 +21,9 @@ class Pattern(Generic[S]):
     items: list[Expr]
     outfn: Callable[[list[Any]], S]
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({repr(self.items), repr(self.outfn)})"
+
     def __len__(self):
         return len(self.items)
 
@@ -115,4 +118,4 @@ def sum(inner) -> Any:
             f"Pattern {inner} has {len(inner.items)} items but needs 1 for a SUM."
         )
     item = inner.items[0]
-    return Pattern([Expr("SUM(?)", [item])], lambda x: x[0])
+    return Pattern([Expr("SUM(?)", [item])], lambda x: x[0] or 0)

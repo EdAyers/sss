@@ -23,7 +23,7 @@ type_map = {
     float: "float8",
     Decimal: "numeric",
     str: "text",
-    bytes: "bytes",
+    bytes: "BYTEA",
     datetime.date: "date",
     datetime.datetime: "timestamp",
     datetime.time: "time",

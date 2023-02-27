@@ -1,6 +1,8 @@
 from dataclasses import dataclass, fields
 from enum import Enum
+from functools import reduce
 import logging
+import operator
 from typing import (
     Any,
     Generic,
@@ -29,12 +31,9 @@ class OrderKind(Enum):
     Descending = "DESC"
 
 
-WhereClause = Union[bool, dict]
+WhereClause = Union[bool, dict, tuple]
 
 
-def where_to_expr(where: WhereClause):
-    if where is True:
-        return Expr.empty
 
 
 class SchemaMeta(type):
@@ -176,6 +175,18 @@ class Table(Generic[T]):
             return self.schema(**d)
 
         return Pattern({c.name: Pattern(c) for c in cs}).map(blam)
+
+    def where_to_expr(self, where: WhereClause) -> Expr:
+        if where is True:
+            return Expr.empty()
+        elif isinstance(where, dict):
+            kvs = reduce(operator.and_, [self.schema.as_column(k) == v for k, v in where.items()])
+            return kvs
+        elif isinstance(where, tuple):
+            return reduce(operator.and_, where)
+        else:
+            return Expr(where)
+
 
     @overload
     def select(

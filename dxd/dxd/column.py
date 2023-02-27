@@ -87,6 +87,11 @@ class Column(AbstractExpr):
     def __hash__(self):
         return hash((self.schema.__name__, self.name))
 
+    def __eq__(self, other):
+        if isinstance(other, Column):
+            return hash(self) == hash(other)
+        return super().__eq__(other)
+
     @classmethod
     def of_field(cls, schema, f: Field) -> "Column":
         cls = f.metadata.get("cls", cls)

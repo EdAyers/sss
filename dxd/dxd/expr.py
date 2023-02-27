@@ -34,6 +34,9 @@ class AbstractExpr(ABC):
     def __and__(self, other):
         return Expr.binary(" AND ", [self, other], precedence=2)
 
+    def __or__(self, other):
+        return Expr.binary(" OR ", [self, other], precedence=2)
+
     def __eq__(self, other):
         return Expr.binary(" = ", [self, other], 4)
 
@@ -42,6 +45,9 @@ class AbstractExpr(ABC):
 
     def __not__(self):
         return Expr("NOT ( ? )", [self], 3)
+
+    def __bool__(self):
+        raise ValueError(f"{self} is not a boolean expression")
 
 
 class Expr(AbstractExpr):
