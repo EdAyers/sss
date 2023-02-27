@@ -22,7 +22,10 @@ class AuthenticationError(Exception):
 
 
 # [todo] use pydantic with a check
-ApiKey = NewType("ApiKey", str)
+
+
+class ApiKey(BaseModel):
+    value: str
 
 
 class JwtClaims(BaseModel):
@@ -56,7 +59,7 @@ def from_auth_header(s: str):
         return from_jwt(param)
     else:
         # [todo] validation of api key here
-        return ApiKey(s)
+        return ApiKey(value=s)
 
 
 def from_request(request: Request):
@@ -84,7 +87,7 @@ def user_of_token(token: ApiKey | JwtClaims, db: Db) -> User:
     """
     if isinstance(token, ApiKey):
         user_id = db.api_keys.select_one(
-            where=ApiKeyEntry.key == token, select=ApiKeyEntry.user_id
+            where=ApiKeyEntry.key == token.value, select=ApiKeyEntry.user_id
         )
         if user_id is None:
             raise AuthenticationError("unknown API key")

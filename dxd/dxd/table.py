@@ -1,5 +1,6 @@
 from dataclasses import dataclass, fields
 from enum import Enum
+import logging
 from typing import (
     Any,
     Generic,
@@ -19,6 +20,8 @@ from .pattern import Pattern
 T = TypeVar("T", bound="Schema")
 S = TypeVar("S")
 R = TypeVar("R")
+
+logger = logging.getLogger("dxd")
 
 
 class OrderKind(Enum):
@@ -70,28 +73,42 @@ class Schema(metaclass=SchemaMeta):
         fields = [c.sql_schema for c in columns(cls)]
         if not any(c.primary for c in columns(cls)):
             raise TypeError(
-                f"At least one of the fields in {cls.__name__} should be labelled as primary: `= col(primary = True)`"
+                f"at least one of the fields in {cls.__name__} should be labelled as primary: `= col(primary = True)`"
             )
         ks = ", ".join([c.name for c in columns(cls) if c.primary])
         fields.append(f"PRIMARY KEY ({ks})")
         for c in columns(cls):
             fk = c.foreign_key
             if fk is not None:
-                assert isinstance(fk, Column)
                 table: Table | None = references.get(c, references.get(c.name, None))
                 if table is None:
                     raise ValueError(
-                        f"No reference table found for foreign key {repr(c)}."
+                        f"no reference table found for foreign key {repr(c)}"
                     )
-                if table.schema != fk.schema:
-                    raise ValueError(f"Incompatible foreign key {repr(fk)} in {table}")
-                if fk.type != c.type:
-                    raise TypeError(
-                        f"types {repr(fk)} : {fk.type} and {repr(c)} : {c.type} do not match."
+                if isinstance(fk, Column):
+                    if table.schema != fk.schema:
+                        raise ValueError(
+                            f"Incompatible foreign key {repr(fk)} in {table}"
+                        )
+                    if fk.type != c.type:
+                        raise TypeError(
+                            f"types {repr(fk)} : {fk.type} and {repr(c)} : {c.type} do not match"
+                        )
+                    fields.append(
+                        f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({fk.name}) ON DELETE CASCADE"
                     )
-                fields.append(
-                    f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({fk.name}) ON DELETE CASCADE"
-                )
+                elif fk is True:
+                    # get the primary key
+                    p = table.primary_key_pattern()
+                    e = p.to_expr()
+                    assert len(e.values) == 0, "pattern had values"
+                    t = e.template
+                    logger.debug(f"Guessing template {t} for table {table.name}")
+                    fields.append(
+                        f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({t}) ON DELETE CASCADE"
+                    )
+                else:
+                    raise TypeError(f"unknown foreign key {repr(fk)}")
         fields = ",\n  ".join(fields)
         q = f"CREATE TABLE IF NOT EXISTS {name} (\n  {fields}\n);"
         engine.execute(q)
@@ -101,11 +118,12 @@ class Schema(metaclass=SchemaMeta):
     def as_column(cls, item: Union[Column, str]) -> Column:
         if isinstance(item, Column):
             return item
-        else:
-            assert isinstance(item, str)
+        elif isinstance(item, str):
             fields = getattr(cls, "__dataclass_fields__")
             # [todo] pydantic
             return Column.of_field(cls, fields.get(item))
+        else:
+            raise TypeError(f"can't convert {item} to a table column")
 
 
 @dataclass
@@ -144,6 +162,12 @@ class Table(Generic[T]):
             assert isinstance(where, Expr)
             e = where
         return Expr("WHERE ?", [e])
+
+    def primary_key_pattern(self) -> Pattern:
+        pcs = [c for c in columns(self) if c.primary]
+        if len(pcs) == 1:
+            return Pattern(pcs[0])
+        return Pattern(tuple(Pattern(c) for c in pcs))
 
     def pattern(self) -> Pattern[T]:
         cs = list(columns(self))
@@ -306,7 +330,7 @@ class Table(Generic[T]):
     def update(self, values, where=True, returning=None):  # type: ignore
         # [todo] if 'where : T', set where to be T's primary key.
         def mk_setter(key, value) -> "Expr":
-            assert isinstance(key, Column)  # [todo] strings for column names are ok too
+            key = self.schema.as_column(key)
             return Expr(f"{key.name} = ?", [value])
 
         setters = Expr.binary(", ", [mk_setter(k, v) for k, v in values.items()])

@@ -6,35 +6,39 @@ from datetime import timedelta
 from miniscutil import Current, get_app_cache_dir, get_app_config_dir, get_workspace_dir
 from miniscutil.config import persist_config, get_config
 
-APP_NAME = "blobular" # [todo] get from my package name
+APP_NAME = "blobular"  # [todo] get from my package name
 
 logger = logging.getLogger(APP_NAME)
+
 
 class Settings(BaseSettings, Current):
     """This dataclass contains all of the configuration needed to use hitsave."""
 
-    cloud_url: str
+    cloud_url: str = Field(
+        default="http://127.0.0.1:3000"
+    )  # [todo] switch for local mode.
     """ URL for cloud API server. """
 
-    github_client_id: str
-    """ This is the github client id used to authenticate the app. """
-
-    web_url: str
+    web_url: str = Field(default="hitsave.io")
     """ URL for the website. """
 
-    local_cache_dir: Path = Field(default_factory = lambda: get_app_cache_dir(APP_NAME))
+    local_cache_dir: Path = Field(default_factory=lambda: get_app_cache_dir(APP_NAME))
     """ This is the directory where hitsave should store local caches of data. """
 
-    api_key: Optional[SecretStr] = Field(default = None)
+    api_key: Optional[SecretStr] = Field(default=None)
 
-    jwt: Optional[SecretStr] = Field(default = None)
+    jwt: Optional[SecretStr] = Field(default=None)
 
-    workspace_dir: Path = Field(default_factory=lambda: get_workspace_dir())
+    workspace_dir: Optional[Path] = Field(default_factory=lambda: get_workspace_dir())
     """ Directory for the current project, should be the same as workspace_folder in vscode.
     It defaults to the nearest parent folder containing pyproject.toml or git root. """
 
     config_dir: Path = Field(default_factory=lambda: get_app_config_dir(APP_NAME))
     """ The root config directory. """
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
 
     @property
     def secrets_file(self) -> Path:
@@ -45,8 +49,10 @@ class Settings(BaseSettings, Current):
             try:
                 jwt = get_config(self.secrets_file, ("jwt", self.cloud_url))
             except LookupError:
-                logger.debug(f"no JWT for {self.cloud_url} found in {self.secrets_file}")
-                raise LookupError() from None
+                logger.debug(
+                    f"no JWT for {self.cloud_url} found in {self.secrets_file}"
+                )
+                return None
             self.jwt = SecretStr(jwt)
             return jwt
         else:
@@ -67,7 +73,9 @@ class Settings(BaseSettings, Current):
                 key = get_config(self.secrets_file, ("api_key", self.cloud_url))
                 assert isinstance(key, str)
             except LookupError:
-                logger.debug(f"no API key for {self.cloud_url} found in {self.secrets_file}")
+                logger.debug(
+                    f"no API key for {self.cloud_url} found in {self.secrets_file}"
+                )
                 return None
             self.api_key = SecretStr(key)
             return key
@@ -78,6 +86,3 @@ class Settings(BaseSettings, Current):
         logger.debug(f"Saving API key to {self.secrets_file}")
         persist_config(self.secrets_file, ("api_key", self.cloud_url), key)
         self.api_key = SecretStr(key)
-
-
-

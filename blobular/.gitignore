@@ -136,3 +136,5 @@ dmypy.json
 /scratch.py
 
 .env
+
+/cache/

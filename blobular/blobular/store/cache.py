@@ -10,12 +10,12 @@ from blobular.store.abstract import AbstractBlobStore, BlobInfo, get_digest_and_
 
 @dataclass
 class CacheRow(Schema):
-    accesses: int = col(default=0)
-    last_accessed: datetime = col(default_factory=datetime.utcnow)
     digest: str = col(primary=True)
     content_length: int = col()
+    accesses: int = col(default=0)
     is_cached: bool = col(default=False)
     is_stored: bool = col(default=False)
+    last_accessed: datetime = col(default_factory=datetime.utcnow)
 
 
 class CacheBlobStore:
@@ -164,18 +164,23 @@ class CacheBlobStore:
         assert row.is_cached
         with self.cache.open(row.digest) as f:
             self.store.add(f, digest=row.digest, content_length=row.content_length)
-        self.table.update(where=CacheRow.digest == digest, values={CacheRow.is_stored: True})
+        self.table.update(
+            where=CacheRow.digest == digest, values={CacheRow.is_stored: True}
+        )
 
     def flush(self):
-        digests = list(self.table.select(
-            where=CacheRow.is_cached == True and CacheRow.is_stored == False
-        ))
+        digests = list(
+            self.table.select(
+                where=CacheRow.is_cached == True and CacheRow.is_stored == False
+            )
+        )
         for digest in digests:
             self.push(digest)
 
 
 class SizedBlobStore(AbstractBlobStore):
-    """ Store where it puts blobs in small if it's less than threshold or big otherwise. """
+    """Store where it puts blobs in small if it's less than threshold or big otherwise."""
+
     threshold: int
 
     def __init__(
@@ -184,8 +189,7 @@ class SizedBlobStore(AbstractBlobStore):
         self.small = small
         self.big = big
 
-
-    def add(self, tape : IO[bytes], *, digest=None, content_length=None):
+    def add(self, tape: IO[bytes], *, digest=None, content_length=None):
         if digest is None or content_length is None:
             digest, content_length = get_digest_and_length(tape)
             tape.seek(0)

@@ -5,7 +5,7 @@ import logging
 
 import psycopg
 
-from dxd import Schema, col, Table, engine
+from dxd import Schema, col, Table, engine, Engine
 from dxd.postgres_engine import PsycopgEngine
 from pydantic import PostgresDsn
 from blobular.api.settings import Settings  # we are using postgres
@@ -13,15 +13,12 @@ from blobular.registry import BlobClaim
 
 logger = logging.getLogger("blobular")
 
-# [todo] configify
-dsn = PostgresDsn("postgres://edward@localhost:5432/blobular")
-
 
 @dataclass
 class User(Schema):
-    gh_id: str
-    gh_email: str
+    gh_id: int
     gh_username: str
+    gh_email: str
     gh_avatar_url: str
     email_verified: bool
     id: UUID = col(primary=True, default_factory=uuid4)
@@ -36,12 +33,13 @@ class ApiKey(Schema):
 
 @dataclass
 class BlobularApiDatabase:
+    engine: Engine
     users: Table[User]
     api_keys: Table[ApiKey]
     blobs: Table[BlobClaim]
 
 
-def get_db():
+async def get_db():
     """FastAPI fixture for the database"""
     cfg = Settings.current()
     with psycopg.connect(cfg.pg) as conn:
@@ -50,5 +48,5 @@ def get_db():
             users = User.create_table()
             aks = ApiKey.create_table(references={ApiKey.user_id: users})
             blobs = BlobClaim.create_table(references={BlobClaim.user_id: users})
-            db = BlobularApiDatabase(users=users, api_keys=aks, blobs=blobs)
+            db = BlobularApiDatabase(users=users, api_keys=aks, blobs=blobs, engine=eng)
             yield db

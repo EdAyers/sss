@@ -34,8 +34,11 @@ dependencies = [
 
   # api deps
   "pydantic",
-  "jose", # jwts
+  "pydantic[email]",
+  "pydantic[dotenv]",
+  "python-jose", # jwts
   "fastapi",
+  "python-multipart",
   "aiohttp", # for communicating with github
 ]
 dynamic = ["version"]
@@ -73,3 +76,6 @@ exclude_lines = [
   "if __name__ == .__main__.:",
   "if TYPE_CHECKING:",
 ]
+
+[project.scripts]
+blobular = "blobular.cli.cli:app"

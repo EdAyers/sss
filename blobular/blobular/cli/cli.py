@@ -7,22 +7,26 @@ from dataclasses import dataclass, fields, asdict
 import asyncio
 import platform
 from enum import Enum
-from .authenticate import (
+from .login import (
     AuthenticationError,
     generate_api_key,
     loopback_login,
 )
-from .cloudutils import print_api_key_status, print_jwt_status
-from .console import console, decorate, logger, user_info
-from .settings import Settings, APP_NAME
-from .filesnap import DirectorySnapshot, FileSnapshot
+from blobular.cli.cloudutils import print_api_key_status, print_jwt_status
+from blobular.cli.console import (
+    console,
+    decorate,
+    logger,
+    user_info,
+    is_interactive_terminal,
+)
+from blobular.cli.settings import Settings, APP_NAME
+from blobular.cli.filesnap import DirectorySnapshot, FileSnapshot
 from rich.prompt import Confirm
 
-from ..__about__ import __version__ as version
-from .console import is_interactive_terminal
+from blobular.__about__ import __version__ as version
 
-from ..store import AbstractBlobStore, SizedBlobStore, CacheBlobStore, InMemBlobStore, OnDatabaseBlobStore, LocalFileBlobStore, CacheRow, BlobContent
-from ..store.cloud import CloudBlobStore
+from blobular.store.cloud import CloudBlobStore
 
 from miniscutil import Current
 from dxd import Table, engine_context
@@ -139,9 +143,16 @@ def snapshot(path: Path = typer.Argument(..., exists=True)):
 @app.command()
 def status():
     f"""Prints details of {APP_NAME}'s connection"""
-    jc = print_jwt_status()
-    print_api_key_status()
+    cfg = Settings.current()
+    print(f"server: {cfg.cloud_url}")
+    print(f"workspace: {cfg.workspace_dir}")
+    try:
+        print_jwt_status()
+        print_api_key_status()
+    except ConnectionError as e:
+        print(f"not connected")
     # [todo] info about local cache for the given project.
+
 
 if __name__ == "__main__":
     app()

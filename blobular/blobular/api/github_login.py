@@ -49,7 +49,7 @@ def generate_jwt(user_uuid: UUID, expires_delta: Optional[timedelta] = None):
         expire = datetime.utcnow() + expires_delta
         claims = {
             "exp": expire,
-            "sub": user_uuid,
+            "sub": user_uuid.hex,
         }
         # [todo] use JwtClaims base model
         # [todo] add an issuer?
@@ -68,9 +68,9 @@ async def get_github_access_token(code: str):
     try:
         async with aiohttp.ClientSession() as session:
             headers = {"Accept": "application/json"}
-            params = {
+            params: dict[str, str] = {
                 "client_id": cfg.github_client_id,
-                "client_secret": cfg.github_client_secret,
+                "client_secret": cfg.github_client_secret.get_secret_value(),
                 "code": code,
             }
             async with session.get(
@@ -105,8 +105,20 @@ async def get_github_user_info(access_token: str):
         raise LoginError() from e
 
 
-async def login_handler(code: str, db: Db = Depends(get_db)):
-    """FastAPI handler for GitHub login."""
+async def login_handler(code: str, db) -> str:
+    """FastAPI handler for GitHub login.
+
+    Using the authorization code provided by GitHub, this function will
+    get user information on GitHub, make a new User record in our DB and
+    return the signed JWT.
+
+    Args:
+        code (str): The authorization code from GitHub.
+    Returns:
+        A string of the signed JWT to issue to the login requester.
+    Raises:
+        AuthenticationError: If the request fails for any reason.
+    """
     access_token = await get_github_access_token(code)
     user_info, emails = await get_github_user_info(access_token)
 
@@ -119,11 +131,11 @@ async def login_handler(code: str, db: Db = Depends(get_db)):
     upsert: Any = dict(
         gh_id=user_info.id,
         gh_email=str(primary_email.email),
-        gh_login=user_info.login,
+        gh_username=user_info.login,
         gh_avatar_url=user_info.avatar_url,
         email_verified=primary_email.verified,
     )
-    with transaction():
+    with transaction(db.engine):
         # [todo] write Table.upsert
         user = db.users.select_one(where=User.gh_id == user_info.id)
         if user is None:

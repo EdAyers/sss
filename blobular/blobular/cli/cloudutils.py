@@ -18,28 +18,39 @@ class AuthenticationError(Exception):
 
     That is, the JWT or API key is nonexistent or not valid."""
 
+
 already_reported_connection_error = False
 """ This is true to only report a bad connection as a warning once. """
+
 
 def print_jwt_status() -> bool:
     """Returns true if we are authenticated with a JWT auth."""
     cfg = Settings.current()
     jwt = cfg.get_jwt()
     if jwt is None:
-        print("Not logged in.")
+        print("not logged in")
         return False
-    headers = {"Authorization": f"Bearer {jwt}"}
+    headers = {
+        "Authorization": f"Bearer {jwt}",
+        "Cache-Control": "no-cache",
+    }
     response = request("GET", "/user", headers=headers)
-    if response.status_code == 200:
-        print("Logged in.")
+    if response.ok:
+        user = response.json()
+        id = user.get("id")
+        gh_username = user.get("gh_username")
+        if gh_username is not None:
+            print(f"logged in as https://github.com/{gh_username}")
+        else:
+            print(f"logged in with user id {id}")
         return True
     if response.status_code == 401:
         cfg.invalidate_jwt()
-        print("Login session expired.")
+        print(f"not logged in: {response.text}")
         return False
     if response.status_code == 403:
         cfg.invalidate_jwt()
-        print("Invalid JWT. Deleting.")
+        print(f"forbidden: {response.text}")
         return False
     response.raise_for_status()
     raise NotImplementedError(response)
@@ -49,16 +60,17 @@ def print_api_key_status() -> None:
     cfg = Settings.current()
     api_key = cfg.get_api_key()
     if api_key is None:
-        print("No API key found.")
+        print("no API key found")
         return
-    response = request("GET", "/user")
+    response = request("GET", "/user", headers={"Cache-Control": "no-cache"})
     if response.status_code == 200:
-        print("API key valid.")
+        print("API key valid")
     elif response.status_code == 401:
-        print("API key not valid.")
+        reason = response.text
+        print(f"API key not valid: {reason}")
     else:
+        print("unknown response", response.status_code, response.text)
         response.raise_for_status()
-        print("Unknown response", response.status_code, response.text)
 
 
 def request(

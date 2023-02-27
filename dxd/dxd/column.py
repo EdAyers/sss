@@ -126,7 +126,10 @@ def col(
         cls = JsonCol
     else:
         cls = Column
-    assert foreign_key is None or isinstance(foreign_key, Column)
+    if not any(
+        [foreign_key is None, foreign_key is True, isinstance(foreign_key, Column)]
+    ):
+        raise TypeError("foreign_key must be None, True, or a Column")
     return field(
         metadata={
             **metadata,

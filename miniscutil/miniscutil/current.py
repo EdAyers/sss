@@ -40,9 +40,9 @@ class Current:
         """The current value of the singleton class."""
         c = cls.CURRENT.get(None)
         if c is None:
-            if hasattr(cls, "default") and callable(cls.default):
+            try:
                 c = cls.default()
-            else:
+            except NotImplementedError:
                 c = cls()
             assert isinstance(c, cls)
             cls.CURRENT.set(c)

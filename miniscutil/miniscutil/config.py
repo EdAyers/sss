@@ -83,7 +83,7 @@ def get_app_config_dir(app_name: str) -> Path:
         p = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config"))
     elif sys.platform == "darwin":  # macos
         # [todo] "~/Library/Application Support" or "~/Library/Preferences"?
-        p = Path("~/Library/Application Support")
+        p = Path("~") / "Library" / "Application Support"
     else:
         p = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config"))
     p = p.expanduser().resolve() / app_name

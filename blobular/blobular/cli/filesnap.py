@@ -16,13 +16,17 @@ import shutil
 from pathlib import Path, PurePath
 import pathlib
 from stat import S_IREAD, S_IRGRP, S_IROTH
+
 BLOCK_SIZE = 2**20
+
 
 def get_store():
     return AppState.current().store
 
+
 def get_filestore():
     return AppState.current().local_file_store
+
 
 @dataclass
 class FileSnapshot:
@@ -71,13 +75,12 @@ class FileSnapshot:
         a.store.pull(self.digest)
         if files.has(self.digest):
             return
-        assert local.has(self.digest) # because we pulled it
+        assert local.has(self.digest)  # because we pulled it
         with local.open(self.digest) as f:
             # [todo] remove tempfiles implicitly used here.
             # [todo] need to tell SizedBlobStore that the file is stored on disk.
-            files.add(f, digest = self.digest, content_length = self.content_length)
+            files.add(f, digest=self.digest, content_length=self.content_length)
         user_info(f"Downloaded {self.name}.")
-
 
     def open(self) -> IO[bytes]:
         """Open the snapshot in read mode. (writing to a snapshot is not allowed.)"""
@@ -158,9 +161,9 @@ class FileSnapshot:
         # We should be very very careful about saving files from some arbitrary part of the disk.
         # [todo] assert that the file is finite (eg not `/dev/yes`)
         # [todo] do we need to lock files in case of multiprocessing? This is faff crossplatform
-        if workspace_dir is None:
-            workspace_dir = Settings.current().workspace_dir
-        if path.is_relative_to(workspace_dir):
+        workspace_dir = workspace_dir or Settings.current().workspace_dir
+
+        if workspace_dir is not None and path.is_relative_to(workspace_dir):
             relpath = path.relative_to(workspace_dir)
         else:
             relpath = None

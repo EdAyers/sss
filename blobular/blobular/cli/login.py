@@ -3,9 +3,9 @@ from typing import Dict, Optional
 import webbrowser
 from aiohttp import web
 import aiohttp
-from .settings import Settings
-from .cloudutils import  AuthenticationError
-from .console import console, is_interactive_terminal, logger
+from blobular.cli.settings import Settings
+from blobular.cli.cloudutils import AuthenticationError
+from blobular.cli.console import console, is_interactive_terminal, logger
 import urllib.parse
 from pathlib import Path
 
@@ -16,11 +16,18 @@ Todo:
 """
 
 
-async def loopback_login(*, autoopen=True) -> str:
+async def get_github_client_id():
+    cfg = Settings.current()
+    async with aiohttp.ClientSession(cfg.cloud_url) as session:
+        async with session.get("/auth/github/client_id") as resp:
+            return await resp.text()
+
+
+async def loopback_login(*, autoopen=False) -> str:
     """Interactive workflow to perform the github authentication loop.
 
     ① present a sign-in-with-github link to the user in the terminal.
-    ② ping api.hitsave.io/user/login for a new JWT.
+    ② ping $CLOUD_URL/auth/github/login for a new JWT.
     ③ return the JWT and store it locally the JWT in a local file.
 
     A holder of this JWT, for the period that it is valid, is authenticated in hitsave as the person
@@ -32,19 +39,17 @@ async def loopback_login(*, autoopen=True) -> str:
             "Can't authenticate the user in a non-interactive terminal session."
         )
     cfg = Settings.current()
+    github_client_id = await get_github_client_id()
     # [todo] if there is already a valid jwt, don't bother logging in here.
 
     redirect_port = 9449  # [todo] check not claimed.
     miniserver_url = urllib.parse.quote(f"http://127.0.0.1:{redirect_port}")
     query_params = {
-        "client_id": cfg.github_client_id,  # Production GitHub OAuth app client id
-        "redirect_uri": f"{cfg.web_url}/login?client_loopback={miniserver_url}",
+        "client_id": github_client_id,  # Production GitHub OAuth app client id
         "scope": "user:email",
+        "redirect_uri": f"{cfg.cloud_url}/auth/github/login?client_loopback={miniserver_url}",
     }
-    # query_params = urllib.parse.urlencode(query_params)
-    query_params = "&".join(
-        [f"{k}={q}" for k, q in query_params.items()]
-    )  # [note] this gives slightly nicer messages over using url_parse
+    query_params = urllib.parse.urlencode(query_params)
     base_url = "https://github.com/login/oauth/authorize"
     sign_in_url = f"{base_url}?{query_params}"
     # [todo] check user isn't already logged in
@@ -54,8 +59,8 @@ async def loopback_login(*, autoopen=True) -> str:
         """Handler for the mini webserver"""
         # print(request, request.url, request.method)
         ps = dict(request.url.query)
-        assert "jwt" in ps, "Github redirect did not include a `jwt` param."
-        # [todo] validate it's a JWT
+        if "jwt" not in ps:
+            raise ValueError(f"github redirect did not include a `jwt` param")
         if not fut.done():
             fut.set_result(ps)
         return web.Response(text="Done")
@@ -79,8 +84,9 @@ async def loopback_login(*, autoopen=True) -> str:
     await server.shutdown()
     assert "jwt" in result
     jwt = result["jwt"]
-    cfg.persist_jwt(jwt)
     console.print("Successfully logged in.")
+    console.print(f"Saving authentication token to {cfg.secrets_file}.")
+    cfg.persist_jwt(jwt)
     return jwt
 
 
@@ -98,19 +104,21 @@ async def generate_api_key(label: str):
     async with aiohttp.ClientSession(
         cloud_url, headers={"Authorization": f"Bearer {jwt}"}
     ) as session:
-        async with session.get("/api_key/generate", params={"label": label}) as resp:
+        async with session.post("/api_key/generate", params={"label": label}) as resp:
             if resp.status == 401:
                 msg = await resp.text()
                 logger.debug(msg)
                 raise AuthenticationError(f"Authentication session has expired.")
             resp.raise_for_status()
-            if resp.content_type == "application/json":
-                raise NotImplementedError(
-                    "json response to /api_key/generate not implemented"
-                )
-            elif resp.content_type == "text/plain":
+            if resp.content_type == "text/plain":
                 api_key = await resp.text()
             else:
-                raise Exception(f"Unknown content_type {resp.content_type}")
+                raise Exception(f"unknown content_type {resp.content_type}")
     logger.debug(f"Successfully recieved new API key")
     return api_key
+
+
+if __name__ == "__main__":
+    cfg = Settings.current()
+    # run the loopback login flow here.
+    asyncio.run(loopback_login())
