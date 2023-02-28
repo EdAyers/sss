@@ -15,7 +15,7 @@ class Settings(BaseSettings, Current):
     """This dataclass contains all of the configuration needed to use hitsave."""
 
     cloud_url: str = Field(
-        default="http://127.0.0.1:3000"
+        default="https://blobular.edayers.com"
     )  # [todo] switch for local mode.
     """ URL for cloud API server. """
 
