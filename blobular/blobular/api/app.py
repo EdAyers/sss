@@ -235,7 +235,7 @@ def get_claim(digest: str, user: User, db: Db):
     return claim
 
 
-@app.head("/blob/{digest}")
+@app.get("/blob/{digest}/info")
 async def head_blob(digest: str, user: User = Depends(get_user), db=Depends(database)):
     """Get the info for a blob."""
     claim = get_claim(digest, user, db)

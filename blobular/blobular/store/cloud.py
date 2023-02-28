@@ -25,7 +25,7 @@ class CloudBlobStore(AbstractBlobStore):
 
         If disconnected raises a ConnectionError.
         """
-        r = request("HEAD", f"/blob/{digest}")
+        r = request("GET", f"/blob/{digest}/info")
         if r.status_code == 404:
             return False
         if r.status_code // 100 == 2:
@@ -34,7 +34,7 @@ class CloudBlobStore(AbstractBlobStore):
         raise NotImplementedError(f"Unhandled status {r.status_code}: {r.text}")
 
     def get_content_length(self, digest: str) -> int:
-        r = request("HEAD", f"/blob/{digest}")
+        r = request("GET", f"/blob/{digest}/info")
         if r.status_code == 404:
             raise FileNotFoundError(f"Blob {digest} not found")
         # HEAD should never return a body
@@ -113,7 +113,7 @@ class CloudBlobStore(AbstractBlobStore):
         request("DELETE", f"/blob/{digest}")
 
     def get_info(self, digest) -> Optional[BlobInfo]:
-        r = request("HEAD", f"/blob/{digest}")
+        r = request("GET", f"/blob/{digest}/info")
         r.raise_for_status()
         j = r.json()
         return BlobInfo(j["digest"], j["content_length"])
