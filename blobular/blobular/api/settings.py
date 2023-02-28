@@ -1,3 +1,5 @@
+from pathlib import Path
+from typing import Literal, Optional
 from pydantic import SecretStr, BaseModel, Field, PostgresDsn, BaseSettings
 from datetime import timedelta
 from miniscutil import Current
@@ -19,7 +21,10 @@ class Settings(BaseSettings, Current):
     jwt_algorithm: str = Field(default="HS256")
     jwt_secret: SecretStr
 
-    pg: PostgresDsn
+    blobstore_mode: Literal['localfile', 's3'] = Field(default='localfile')
+    database_mode: Literal["sqlite", "postgres"] = Field(default="sqlite")
+    pg: Optional[PostgresDsn] = Field(default=None)
+    local_data_path: Path = Field(default=Path('data'))
 
     aws_access_key_id: str
     aws_secret_access_key: SecretStr

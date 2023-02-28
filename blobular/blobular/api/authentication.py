@@ -104,7 +104,7 @@ def user_of_token(token: ApiKey | JwtClaims, db: Db) -> User:
         raise AuthenticationError("unrecognized authentication token")
 
 
-def get_user(request: Request, db: Db = Depends(get_db)):
+def get_user(request: Request, db: Db):
     """FastAPI fixture for getting the authenticated user."""
     token = from_request(request)
     user = user_of_token(token, db)

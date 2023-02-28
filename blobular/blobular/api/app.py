@@ -1,5 +1,6 @@
 from dataclasses import replace
 from datetime import datetime
+from functools import partial
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 from blobular.util import human_size
 from fastapi import FastAPI
@@ -30,7 +31,6 @@ from blobular.api.github_login import login_handler
 from blobular.api.persist import (
     BlobularApiDatabase as Db,
     User,
-    get_db,
     ApiKey as ApiKeyEntry,
 )
 from blobular.store import (
@@ -40,7 +40,7 @@ from blobular.store import (
     BlobContent,
 )
 from miniscutil import chunked_read
-from blobular.api.authentication import get_user
+from blobular.api.authentication import get_user as get_user_core
 from dxd import transaction
 from pathlib import Path
 import boto3
@@ -48,21 +48,19 @@ import boto3
 app = FastAPI()
 logger = logging.getLogger("blobular")
 
+db = Db()
 
-def get_blobstore(request: Request, db: Db = Depends(get_db)) -> AbstractBlobStore:
-    cfg = Settings.current()
-    table = BlobContent.create_table("apiresults", db.engine)
-    small = OnDatabaseBlobStore(table)
-    # dir = Path("cache")
-    # assert dir.exists(), f"please make {dir.absolute()}"
-    # big = LocalFileBlobStore(dir)
-    client = boto3.client(
-        "s3",
-        aws_access_key_id=cfg.aws_access_key_id,
-        aws_secret_access_key=cfg.aws_secret_access_key.get_secret_value(),
-    )
-    big = S3BlobStore(bucket_name="blobular", client=client)
-    return SizedBlobStore(small, big, threshold=0)
+get_user = partial(get_user_core, db=db)
+
+
+@app.on_event("startup")
+def startup_event():
+    db.connect()
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    db.disconnect()
 
 
 @app.exception_handler(AuthenticationError)
@@ -77,7 +75,7 @@ def _any_err(request, exc: Exception):
 
 
 @app.get("/user")
-async def handle_get_user(user: User = Depends(get_user), db: Db = Depends(get_db)):
+async def handle_get_user(user: User = Depends(get_user)):
     """Get the current user."""
     usage = int(
         db.blobs.sum(BlobClaim.content_length, where=BlobClaim.user_id == user.id)
@@ -125,7 +123,6 @@ async def login(
     code: str,
     state: str | None = None,
     client_loopback: Optional[str] = None,
-    db=Depends(get_db),
 ):
     """Login to the server. The code param should be a github authentication code.
 
@@ -159,7 +156,7 @@ async def login(
 
 
 @app.post("/api_key/generate")
-def generate_api_key(request: Request, db: Db = Depends(get_db)):
+def generate_api_key(request: Request):
     token = from_request(request)
     if not isinstance(token, JwtClaims):
         raise AuthenticationError(
@@ -172,7 +169,7 @@ def generate_api_key(request: Request, db: Db = Depends(get_db)):
 
 
 @app.get("/blob")
-async def get_blobs(user=Depends(get_user), db: Db = Depends(get_db)):
+async def get_blobs(user=Depends(get_user)):
     blobs = list(db.blobs.select(where=BlobClaim.user_id == user.id))
     return {"blobs": blobs}
 
@@ -182,15 +179,13 @@ async def put_blob(
     file: UploadFile,  # [todo] make optional, so you can change settings on a blob without uploading.
     is_public: bool = False,
     label: Optional[str] = None,
-    blobstore: AbstractBlobStore = Depends(get_blobstore),
     user=Depends(get_user),
-    db: Db = Depends(get_db),
 ):
     """Upload a blob."""
     # [todo] raise if they go over quota
     # [todo] api to upload parts
     # [todo] enforce each upload part is no larger than 100MB
-    info = blobstore.add(file.file)
+    info = db.blobstore.add(file.file)
     # [todo] perform in single query
     with transaction(db.engine):
         where = (BlobClaim.user_id == user.id) & (BlobClaim.digest == info.digest)
@@ -237,7 +232,6 @@ def get_claim(digest: str, user: User, db: Db):
 async def head_blob(
     digest: str,
     user: User = Depends(get_user),
-    db: Db = Depends(get_db),
 ):
     """Get the info for a blob."""
     claim = get_claim(digest, user, db)
@@ -255,8 +249,6 @@ async def head_blob(
 async def get_blob(
     digest: str,
     user: User = Depends(get_user),
-    db: Db = Depends(get_db),
-    blobstore: AbstractBlobStore = Depends(get_blobstore),
 ):
     """Stream the blob."""
     # [todo] feat: request ranges of blob.
@@ -264,7 +256,7 @@ async def get_blob(
     assert claim.digest == digest
 
     def iterfile():
-        with blobstore.open(digest) as tape:
+        with db.blobstore.open(digest) as tape:
             yield from chunked_read(tape)
 
     return StreamingResponse(iterfile())
@@ -274,8 +266,6 @@ async def get_blob(
 async def delete_blob(
     digest: str,
     user: User = Depends(get_user),
-    db: Db = Depends(get_db),
-    blobstore: AbstractBlobStore = Depends(get_blobstore),
 ):
     with transaction():
         db.blobs.delete(
@@ -283,7 +273,7 @@ async def delete_blob(
         )
         if not db.blobs.has(where=BlobClaim.digest == digest):
             # [todo] race conditions?
-            blobstore.delete(digest)
+            db.blobstore.delete(digest)
 
 
 # Run me:
