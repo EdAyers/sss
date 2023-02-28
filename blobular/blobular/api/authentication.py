@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Any, NewType
+from typing import Any, NewType, Optional
 from uuid import UUID
 import aiohttp
 from fastapi import Depends
@@ -9,8 +9,11 @@ from fastapi.security.utils import get_authorization_scheme_param
 from jose import ExpiredSignatureError, JWTError, jwt
 from secrets import token_urlsafe
 from dxd import transaction
+import logging
 from .settings import Settings
 from .persist import ApiKey as ApiKeyEntry, User, BlobularApiDatabase as Db
+
+logger = logging.getLogger("blobular")
 
 
 class AuthenticationError(Exception):
@@ -30,7 +33,9 @@ class ApiKey(BaseModel):
 
 class JwtClaims(BaseModel):
     sub: UUID
+    """ The user id. """
     exp: datetime
+    """ When the token expires. """
 
 
 def from_jwt(encoded_jwt: str) -> JwtClaims:
@@ -46,7 +51,8 @@ def from_jwt(encoded_jwt: str) -> JwtClaims:
     except ExpiredSignatureError as e:
         # [todo] if user-agent is a terminal then suggest the shell command to use.
         raise AuthenticationError("expired JWT, please log in again") from e
-    except (JWTError, ValidationError) as e:
+    except JWTError as e:
+        logger.exception(e)
         raise AuthenticationError("invalid JWT") from e
 
 

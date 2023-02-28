@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from secrets import token_urlsafe
 from typing import Any, Optional
 from uuid import UUID
 import aiohttp
@@ -50,9 +51,10 @@ def generate_jwt(user_uuid: UUID, expires_delta: Optional[timedelta] = None):
         claims = {
             "exp": expire,
             "sub": user_uuid.hex,
+            "iat": datetime.utcnow(),
+            "iss": cfg.cloud_url,
+            "jti": token_urlsafe(16),
         }
-        # [todo] use JwtClaims base model
-        # [todo] add an issuer?
         encoded_jwt = jwt.encode(
             claims=claims,
             key=cfg.jwt_secret.get_secret_value(),

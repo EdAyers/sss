@@ -155,6 +155,7 @@ async def login(
         "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept",
     }
     if client_loopback is not None:
+        # [todo] client_loopback should be localhost.
         url = append_url_params(client_loopback, {"jwt": jwt})
         return RedirectResponse(url, headers=headers)
     else:
