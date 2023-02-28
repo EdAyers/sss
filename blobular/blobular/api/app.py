@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import datetime
 from functools import partial
+import tempfile
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 from blobular.util import human_size
 from fastapi import FastAPI
@@ -182,17 +183,21 @@ async def get_blobs(user=Depends(get_user), db=Depends(database)):
 
 @app.put("/blob")
 async def put_blob(
-    file: UploadFile,  # [todo] make optional, so you can change settings on a blob without uploading.
+    request: Request,  # [todo] make optional, so you can change settings on a blob without uploading.
     is_public: bool = False,
     label: Optional[str] = None,
     user=Depends(get_user),
     db=Depends(database),
 ):
-    """Upload a blob."""
+    """Upload a blob. The request body is the raw blob data."""
     # [todo] raise if they go over quota
     # [todo] api to upload parts
     # [todo] enforce each upload part is no larger than 100MB
-    info = db.blobstore.add(file.file)
+    with tempfile.SpooledTemporaryFile() as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+        f.seek(0)
+        info = db.blobstore.add(f)
     # [todo] perform in single query
     with transaction(db.engine):
         where = (BlobClaim.user_id == user.id) & (BlobClaim.digest == info.digest)
