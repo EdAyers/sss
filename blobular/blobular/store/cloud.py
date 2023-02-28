@@ -75,7 +75,7 @@ class CloudBlobStore(AbstractBlobStore):
             message=f"Uploading {pp_label} ({human_size(content_length)}) {digest}.",
             description="Uploading",
         ) as tape:
-            r = request("PUT", "/blob", data=chunked_read(tape))
+            r = request("PUT", f"/blob/{digest}", data=chunked_read(tape))
         r.raise_for_status()
         if label is not None:
             logger.debug(f"Uploaded {pp_label} {digest}.")

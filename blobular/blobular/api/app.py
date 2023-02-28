@@ -181,9 +181,10 @@ async def get_blobs(user=Depends(get_user), db=Depends(database)):
     return {"blobs": blobs}
 
 
-@app.put("/blob")
+@app.put("/blob/{digest}")
 async def put_blob(
     request: Request,  # [todo] make optional, so you can change settings on a blob without uploading.
+    digest: str,
     is_public: bool = False,
     label: Optional[str] = None,
     user=Depends(get_user),
@@ -197,7 +198,14 @@ async def put_blob(
         async for chunk in request.stream():
             f.write(chunk)
         f.seek(0)
-        info = db.blobstore.add(f)
+        actual_digest, content_length = get_digest_and_length(f)
+        f.seek(0)
+        if actual_digest != digest:
+            raise HTTPException(
+                status_code=400, detail=f"digest mismatch: I got {actual_digest}"
+            )
+        info = db.blobstore.add(f, digest=actual_digest, content_length=content_length)
+
     # [todo] perform in single query
     with transaction(db.engine):
         where = (BlobClaim.user_id == user.id) & (BlobClaim.digest == info.digest)
