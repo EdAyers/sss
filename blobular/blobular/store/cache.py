@@ -215,6 +215,14 @@ class CacheBlobStore:
         for row in rows:
             self.push(row.digest)
 
+    def clear_cache(self):
+        self.flush()
+        count = self.table.update(
+            {CacheRow.is_cached: False}, where=(CacheRow.is_cached == True)
+        )
+        self.cache.clear()
+        logger.info(f"cleared {count} cached blobs")
+
 
 class SizedBlobStore(AbstractBlobStore):
     """Store where it puts blobs in small if it's less than threshold or big otherwise."""
@@ -250,3 +258,7 @@ class SizedBlobStore(AbstractBlobStore):
             return self.big.open(digest)
         else:
             raise LookupError(f"no blob in store with digest {digest}")
+
+    def clear(self):
+        self.small.clear()
+        self.big.clear()

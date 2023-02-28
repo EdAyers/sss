@@ -21,7 +21,7 @@ class LocalFileBlobStore(AbstractBlobStore):
     def __init__(self, local_cache_dir: Path):
         self.local_cache_dir = local_cache_dir
 
-    def iter_blobs(self):
+    def iter(self):
         """Iterate all of the digests of the blobs that exist on disk."""
         p = self.local_cache_dir
         for bp in p.iterdir():
@@ -40,6 +40,8 @@ class LocalFileBlobStore(AbstractBlobStore):
 
     def get_info(self, digest) -> Optional[BlobInfo]:
         p = self.local_file_cache_path(digest)
+        if not p.exists():
+            return None
         content_length = p.stat().st_size
         return BlobInfo(digest, content_length)
 
@@ -52,6 +54,10 @@ class LocalFileBlobStore(AbstractBlobStore):
         if p.exists():
             p.unlink()
             logger.debug(f"Deleted local blob {digest}")
+
+    def clear(self):
+        for d in list(self.iter()):
+            self.delete(d)
 
     def open(self, digest: str, **kwargs) -> IO:
         """Opens the blob. You are responsible for closing it.

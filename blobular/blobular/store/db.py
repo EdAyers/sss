@@ -86,3 +86,7 @@ class OnDatabaseBlobStore(AbstractBlobStore):
         if row is None:
             return None
         return BlobInfo(digest=row.digest, content_length=row.content_length)
+
+
+    def clear(self):
+        self.table.clear()

@@ -58,3 +58,6 @@ class AbstractBlobStore:
 
     def iter(self) -> Iterable[str]:
         raise NotImplementedError()
+
+    def clear(self):
+        raise NotImplementedError()

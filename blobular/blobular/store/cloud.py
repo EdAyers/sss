@@ -115,6 +115,5 @@ class CloudBlobStore(AbstractBlobStore):
     def get_info(self, digest) -> Optional[BlobInfo]:
         r = request("HEAD", f"/blob/{digest}")
         r.raise_for_status()
-        print(r.text)
         j = r.json()
         return BlobInfo(j["digest"], j["content_length"])

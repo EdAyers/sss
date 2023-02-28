@@ -220,5 +220,12 @@ def status():
     # [todo] info about local cache for the given project.
 
 
+@app.command()
+def clear_local():
+    """Delete all local blob data"""
+    a = AppState.current()
+    a.store.clear_cache()
+
+
 if __name__ == "__main__":
     app()
