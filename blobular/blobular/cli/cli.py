@@ -16,7 +16,11 @@ from blobular.cli.login import (
     generate_api_key,
     loopback_login,
 )
-from blobular.cli.cloudutils import print_api_key_status, print_jwt_status
+from blobular.cli.cloudutils import (
+    get_server_status,
+    print_api_key_status,
+    print_jwt_status,
+)
 from blobular.cli.console import (
     console,
     decorate,
@@ -179,13 +183,17 @@ def open(digest: str, path: Optional[Path] = None):
 
 @app.command()
 def status():
-    f"""Prints details of {APP_NAME}'s connection"""
+    """Prints details of the connection."""
     cfg = Settings.current()
     print(f"server: {cfg.cloud_url}")
     print(f"workspace: {cfg.workspace_dir}")
     try:
         print_jwt_status()
         print_api_key_status()
+        status = get_server_status()
+        assert isinstance(status, dict)
+        print(f'server version: {status.get("version")}')
+
     except ConnectionError as e:
         print(f"not connected")
     # [todo] info about local cache for the given project.

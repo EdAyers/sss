@@ -14,6 +14,7 @@ from blobular.api.settings import Settings
 from blobular.store.s3 import S3BlobStore
 from blobular.store.cache import SizedBlobStore
 from blobular.store.localfile import LocalFileBlobStore
+from blobular.__about__ import __version__
 
 from blobular.registry import BlobClaim
 from blobular.api.authentication import (
@@ -81,6 +82,16 @@ async def handle_get_user(user: User = Depends(get_user)):
         "gh_avatar_url": user.gh_avatar_url,
         "gh_username": user.gh_username,
         "id": user.id,
+    }
+
+
+@app.get("/status")
+async def handle_get_status():
+    """Get the status of the server."""
+    return {
+        "status": "ok",
+        "time": datetime.utcnow().isoformat(),
+        "version": __version__,
     }
 
 
