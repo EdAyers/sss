@@ -7,7 +7,7 @@ from fastapi import Depends
 from pydantic import BaseModel, EmailStr
 
 from .settings import Settings
-from .persist import User, get_db, BlobularApiDatabase as Db
+from .persist import User, BlobularApiDatabase as Db
 from jose import ExpiredSignatureError, JWTError, jwt
 
 

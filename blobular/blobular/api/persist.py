@@ -65,8 +65,9 @@ class BlobularApiDatabase:
             logger.info(f"Connected to {self.connection}")
             self.engine = PsycopgEngine(self.connection)
         else:
+            cfg.local_data_path.mkdir(parents=True, exist_ok=True)
             db = cfg.local_data_path / "blobular_api.db"
-            self.connection = sqlite3.connect(db)
+            self.connection = sqlite3.connect(db, check_same_thread=False)
             self.engine = SqliteEngine(self.connection)
         engine_context.set(self.engine)
         self.subscriptions.append(self.connection.close)
@@ -96,12 +97,14 @@ class BlobularApiDatabase:
             dir = cfg.local_data_path / "blobs"
             dir.mkdir(exist_ok=True)
             big = LocalFileBlobStore(dir)
-        self.blobstore = SizedBlobStore(small, big, threshold=0)
+        self.blobstore = SizedBlobStore(small, big, threshold=0)  # [todo]
 
     def disconnect(self):
         for s in self.subscriptions:
             s()
 
-    def __call__(self):
+    async def __call__(self):
         # reference: https://fastapi.tiangolo.com/advanced/advanced-dependencies/
-        return self
+        t = engine_context.set(self.engine)
+        yield self
+        engine_context.reset(t)

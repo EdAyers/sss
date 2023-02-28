@@ -10,7 +10,7 @@ from jose import ExpiredSignatureError, JWTError, jwt
 from secrets import token_urlsafe
 from dxd import transaction
 from .settings import Settings
-from .persist import ApiKey as ApiKeyEntry, User, BlobularApiDatabase as Db, get_db
+from .persist import ApiKey as ApiKeyEntry, User, BlobularApiDatabase as Db
 
 
 class AuthenticationError(Exception):

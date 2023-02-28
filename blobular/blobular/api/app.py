@@ -41,26 +41,30 @@ from blobular.store import (
 )
 from miniscutil import chunked_read
 from blobular.api.authentication import get_user as get_user_core
-from dxd import transaction
+from dxd import transaction, engine_context
 from pathlib import Path
 import boto3
 
 app = FastAPI()
 logger = logging.getLogger("blobular")
 
-db = Db()
+database = Db()
 
-get_user = partial(get_user_core, db=db)
+
+async def get_user(request: Request, db=Depends(database)):
+    t = engine_context.set(db.engine)
+    yield get_user_core(request, db)
+    engine_context.reset(t)
 
 
 @app.on_event("startup")
 def startup_event():
-    db.connect()
+    database.connect()
 
 
 @app.on_event("shutdown")
 def shutdown_event():
-    db.disconnect()
+    database.disconnect()
 
 
 @app.exception_handler(AuthenticationError)
@@ -75,7 +79,7 @@ def _any_err(request, exc: Exception):
 
 
 @app.get("/user")
-async def handle_get_user(user: User = Depends(get_user)):
+async def handle_get_user(user: User = Depends(get_user), db=Depends(database)):
     """Get the current user."""
     usage = int(
         db.blobs.sum(BlobClaim.content_length, where=BlobClaim.user_id == user.id)
@@ -123,6 +127,7 @@ async def login(
     code: str,
     state: str | None = None,
     client_loopback: Optional[str] = None,
+    db=Depends(database),
 ):
     """Login to the server. The code param should be a github authentication code.
 
@@ -136,6 +141,7 @@ async def login(
 
     """
     cfg = Settings.current()
+    assert db.engine == engine_context.get()
     jwt = await login_handler(code, db)
     max_age = cfg.jwt_expires.seconds
     domain = cfg.cloud_url
@@ -156,7 +162,7 @@ async def login(
 
 
 @app.post("/api_key/generate")
-def generate_api_key(request: Request):
+def generate_api_key(request: Request, db=Depends(database)):
     token = from_request(request)
     if not isinstance(token, JwtClaims):
         raise AuthenticationError(
@@ -169,7 +175,7 @@ def generate_api_key(request: Request):
 
 
 @app.get("/blob")
-async def get_blobs(user=Depends(get_user)):
+async def get_blobs(user=Depends(get_user), db=Depends(database)):
     blobs = list(db.blobs.select(where=BlobClaim.user_id == user.id))
     return {"blobs": blobs}
 
@@ -180,6 +186,7 @@ async def put_blob(
     is_public: bool = False,
     label: Optional[str] = None,
     user=Depends(get_user),
+    db=Depends(database),
 ):
     """Upload a blob."""
     # [todo] raise if they go over quota
@@ -229,10 +236,7 @@ def get_claim(digest: str, user: User, db: Db):
 
 
 @app.head("/blob/{digest}")
-async def head_blob(
-    digest: str,
-    user: User = Depends(get_user),
-):
+async def head_blob(digest: str, user: User = Depends(get_user), db=Depends(database)):
     """Get the info for a blob."""
     claim = get_claim(digest, user, db)
 
@@ -246,10 +250,7 @@ async def head_blob(
 
 
 @app.get("/blob/{digest}")
-async def get_blob(
-    digest: str,
-    user: User = Depends(get_user),
-):
+async def get_blob(digest: str, user: User = Depends(get_user), db=Depends(database)):
     """Stream the blob."""
     # [todo] feat: request ranges of blob.
     claim = get_claim(digest, user, db)
@@ -264,8 +265,7 @@ async def get_blob(
 
 @app.delete("/blob/{digest}")
 async def delete_blob(
-    digest: str,
-    user: User = Depends(get_user),
+    digest: str, user: User = Depends(get_user), db=Depends(database)
 ):
     with transaction():
         db.blobs.delete(
