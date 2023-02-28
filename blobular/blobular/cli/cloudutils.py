@@ -31,6 +31,8 @@ def get_server_status():
     r.raise_for_status()
 
 
+
+
 def print_jwt_status() -> bool:
     """Returns true if we are authenticated with a JWT auth."""
     cfg = Settings.current()
@@ -47,10 +49,7 @@ def print_jwt_status() -> bool:
         user = response.json()
         id = user.get("id")
         gh_username = user.get("gh_username")
-        if gh_username is not None:
-            print(f"logged in as https://github.com/{gh_username}")
-        else:
-            print(f"logged in with user id {id}")
+        print("signed in")
         return True
     if response.status_code == 401:
         cfg.invalidate_jwt()

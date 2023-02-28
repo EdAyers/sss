@@ -22,6 +22,7 @@ class User(Schema):
     gh_avatar_url: str
     email_verified: bool
     id: UUID = col(primary=True, default_factory=uuid4)
+    quota: Optional[int] = col(default=2**30)
 
 
 @dataclass

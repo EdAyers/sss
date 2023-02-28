@@ -34,8 +34,6 @@ class OrderKind(Enum):
 WhereClause = Union[bool, dict, tuple]
 
 
-
-
 class SchemaMeta(type):
     def __getattr__(self, key):
         """If we call `User.name`, it should return the `Column` object for that."""
@@ -180,13 +178,14 @@ class Table(Generic[T]):
         if where is True:
             return Expr.empty()
         elif isinstance(where, dict):
-            kvs = reduce(operator.and_, [self.schema.as_column(k) == v for k, v in where.items()])
+            kvs = reduce(
+                operator.and_, [self.schema.as_column(k) == v for k, v in where.items()]
+            )
             return kvs
         elif isinstance(where, tuple):
             return reduce(operator.and_, where)
         else:
             return Expr(where)
-
 
     @overload
     def select(
@@ -226,6 +225,14 @@ class Table(Generic[T]):
             query = Expr(f"?\nLIMIT {limit}", [query])
         xs = self.connection.execute_expr(query)
         return map(p.outfn, xs)
+
+    def sum(self, col, where=True) -> float:
+        c = self.schema.as_column(col)
+        query = Expr(f"SELECT SUM({c.name}) \nFROM {self.name} ", [])
+        if where is not True:
+            query = Expr("?\n?", [query, self._mk_where_clause(where)])
+        xs = self.connection.execute_expr(query)
+        return next(iter(xs))[0] or 0
 
     @overload
     def insert_one(self, item: T, *, or_ignore=False) -> None:

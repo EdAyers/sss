@@ -1,5 +1,7 @@
+from dataclasses import replace
 from datetime import datetime
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
+from blobular.util import human_size
 from fastapi import FastAPI
 from secrets import token_urlsafe
 from typing import Optional
@@ -75,13 +77,19 @@ def _any_err(request, exc: Exception):
 
 
 @app.get("/user")
-async def handle_get_user(user: User = Depends(get_user)):
+async def handle_get_user(user: User = Depends(get_user), db: Db = Depends(get_db)):
     """Get the current user."""
+    usage = int(
+        db.blobs.sum(BlobClaim.content_length, where=BlobClaim.user_id == user.id)
+    )
     return {
         "gh_id": user.gh_id,
         "gh_avatar_url": user.gh_avatar_url,
         "gh_username": user.gh_username,
         "id": user.id,
+        "usage": usage,
+        "quota": user.quota,
+        "usage_h": human_size(usage),
     }
 
 
@@ -179,6 +187,9 @@ async def put_blob(
     db: Db = Depends(get_db),
 ):
     """Upload a blob."""
+    # [todo] raise if they go over quota
+    # [todo] api to upload parts
+    # [todo] enforce each upload part is no larger than 100MB
     info = blobstore.add(file.file)
     # [todo] perform in single query
     with transaction(db.engine):

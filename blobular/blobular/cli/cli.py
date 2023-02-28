@@ -20,6 +20,7 @@ from blobular.cli.cloudutils import (
     get_server_status,
     print_api_key_status,
     print_jwt_status,
+    request,
 )
 from blobular.cli.console import (
     console,
@@ -181,6 +182,25 @@ def open(digest: str, path: Optional[Path] = None):
         logger.error("digest not found")
 
 
+def print_user_status():
+    r = request("GET", "/user")
+    r.raise_for_status()
+    r = r.json()
+    gh_username = r.get("gh_username")
+    if gh_username is not None:
+        print(f"logged in as https://github.com/{gh_username}")
+    else:
+        print(f"logged in with user id {id}")
+    usage = r.get("usage", 0)
+    quota = r.get("quota")
+    if quota is not None:
+        print(
+            f"usage: {human_size(usage)} out of {human_size(quota)} ({usage / quota * 100:.2f}%)"
+        )
+    else:
+        print(f"usage: {human_size(usage)}")
+
+
 @app.command()
 def status():
     """Prints details of the connection."""
@@ -193,6 +213,7 @@ def status():
         status = get_server_status()
         assert isinstance(status, dict)
         print(f'server version: {status.get("version")}')
+        print_user_status()
 
     except ConnectionError as e:
         print(f"not connected")
