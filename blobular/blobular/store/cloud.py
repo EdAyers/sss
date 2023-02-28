@@ -2,13 +2,13 @@ import tempfile
 from typing import IO, Optional
 import logging
 from miniscutil import human_size
-
+from rich.progress import Progress
 from blobular.util import chunked_read
 from .abstract import AbstractBlobStore, BlobInfo, get_digest_and_length
 
 # [todo] shouldn't really depend on cli
 from ..cli.cloudutils import request
-from ..cli.console import tape_progress
+from ..cli.console import tape_progress, user_info, console
 import requests
 
 logger = logging.getLogger(__name__)
@@ -90,22 +90,29 @@ class CloudBlobStore(AbstractBlobStore):
             FileNotFoundError: The blob does not exist on the cloud.
             ConectionError: We are not connected to the cloud.
         """
-        if not self.has(digest):
+        info = self.get_info(digest)
+        if info is None:
             raise FileNotFoundError(f"No blob found {digest}")
-        logger.debug(f"Downloading file {digest}.")
-        r = request("GET", f"/blob/{digest}")
-        content_length = r.headers.get("Content-Length", None)
-        if content_length is not None:
-            content_length = int(content_length)
+        assert info.digest == digest
+        content_length = info.content_length
         tape = tempfile.SpooledTemporaryFile()
-        with tape_progress(
-            tape,
-            total=content_length,
-            message=f"Downloading {digest}",
-            description="Downloading",
-        ) as tape:
-            for chunk in r.iter_content(chunk_size=2**20):
-                tape.write(chunk)
+        if content_length > 2**10:
+            user_info(f"downloading file {digest}")
+        with Progress(transient=True, console=console) as progress:
+            with request("GET", f"/blob/{digest}", stream=True) as r:
+                pt = progress.add_task(f"Downloading", total=content_length)
+                for chunk in r.iter_content(chunk_size=2**10):
+                    progress.update(pt, advance=len(chunk))
+                    tape.write(chunk)
+        tape.seek(0)
+        actual_digest, actual_length = get_digest_and_length(tape)
+        if actual_length != content_length:
+            raise RuntimeError(
+                f"content length mismatch\n   {content_length}\n!= {actual_length}"
+            )
+        if actual_digest != digest:
+            # we downloaded bad
+            raise RuntimeError(f"digest mismatch\n   {actual_digest}\n!= {digest}")
         tape.seek(0)
         return tape
 

@@ -271,7 +271,7 @@ async def get_blob(digest: str, user: User = Depends(get_user), db=Depends(datab
 
     def iterfile():
         with db.blobstore.open(digest) as tape:
-            yield from chunked_read(tape)
+            yield from chunked_read(tape, block_size=2**10)
 
     return StreamingResponse(iterfile())
 

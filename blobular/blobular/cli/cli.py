@@ -157,6 +157,7 @@ def open(digest: str, path: Optional[Path] = None):
     if head is None:
         logger.error("digest not found")
         return
+    s.store.pull(digest)
     if path is not None:
         g = path.open("wb")
     else:
@@ -169,14 +170,8 @@ def open(digest: str, path: Optional[Path] = None):
     try:
         with g as g:
             with s.store.open(digest) as f:
-                with tape_progress(
-                    f,
-                    head.content_length,
-                    message=f"Downloading ({human_size(head.content_length)}) {digest}",
-                    description="Downloading",
-                ) as tape:
-                    for b in chunked_read(tape):
-                        g.write(b)
+                for b in chunked_read(f):
+                    g.write(b)
 
     except LookupError:
         logger.error("digest not found")
@@ -213,6 +208,7 @@ def status():
         status = get_server_status()
         assert isinstance(status, dict)
         print(f'server version: {status.get("version")}')
+        print(f"client version: {version}")
         print_user_status()
 
     except ConnectionError as e:

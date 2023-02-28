@@ -1,6 +1,9 @@
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from typing import IO, Literal
+from blobular.cli.console import tape_progress
+from blobular.util import human_size
 from dxd import col, Schema, Table, sum
 import logging
 from blobular.store.abstract import AbstractBlobStore, BlobInfo, get_digest_and_length
@@ -176,12 +179,13 @@ class CacheBlobStore:
             pass
         return BlobInfo(digest=digest, content_length=content_length)
 
-    def pull(self, digest):
+    def pull(self, digest, progress=False):
         if self.cache.has(digest):
             return
         info = self.store.get_info(digest)
         if info is None:
             raise LookupError(f"no blob in store with digest {digest}")
+
         with self.store.open(digest) as tape:
             self._add_to_cache(
                 tape, digest=info.digest, content_length=info.content_length
