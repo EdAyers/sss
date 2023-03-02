@@ -44,9 +44,9 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/EdAyers/blobular#readme"
-Issues = "https://github.com/EdAyers/blobular/issues"
-Source = "https://github.com/EdAyers/blobular"
+Documentation = "https://github.com/EdAyers/sss/blobular#readme"
+Issues = "https://github.com/EdAyers/sss/blobular/issues"
+Source = "https://github.com/EdAyers/sss/blobular"
 
 [tool.hatch.version]
 path = "blobular/__about__.py"
