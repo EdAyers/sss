@@ -150,7 +150,6 @@ def pp_diffs(old_deps: dict[str, str], new_deps: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-
 def print_jwt_status() -> bool:
     """Returns true if we are authenticated with a JWT auth."""
     cfg = Settings.current()
@@ -173,6 +172,7 @@ def print_jwt_status() -> bool:
         return False
     response.raise_for_status()
     raise NotImplementedError(response)
+
 
 def print_api_key_status() -> None:
     api_key = Settings.current().get_api_key()

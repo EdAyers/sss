@@ -1,5 +1,6 @@
 from miniscutil import human_size
 
+
 def test_human_size(snapshot):
     sizes = [
         1,

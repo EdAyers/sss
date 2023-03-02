@@ -31,8 +31,6 @@ def get_server_status():
     r.raise_for_status()
 
 
-
-
 def print_jwt_status() -> bool:
     """Returns true if we are authenticated with a JWT auth."""
     cfg = Settings.current()

@@ -1,5 +1,6 @@
 from miniscutil.type_util import *
 
+
 def test_isoptional():
     assert is_optional(Optional[int])
     assert not is_optional(int)

@@ -18,7 +18,6 @@ import math
 import functools
 
 
-
 X = TypeVar("X")
 Y = TypeVar("Y")
 Z = TypeVar("Z")
@@ -74,12 +73,13 @@ def dict_diff(d1: Dict[str, X], d2: Dict[str, Y]) -> DictDiff[X, Y]:
     )
 
 
-def map_keys(f: Callable[[X], Y], d: dict[X,Z]) -> dict[Y,Z]:
+def map_keys(f: Callable[[X], Y], d: dict[X, Z]) -> dict[Y, Z]:
     return {f(k): v for k, v in d.items()}
 
 
-def map_values(f: Callable[[X], Y], d: dict[Z,X]) -> dict[Z,Y]:
+def map_values(f: Callable[[X], Y], d: dict[Z, X]) -> dict[Z, Y]:
     return {k: f(v) for k, v in d.items()}
+
 
 def partition(
     pred: Callable[[X], bool], iterable: Iterable[X]

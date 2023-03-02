@@ -2,6 +2,7 @@ from dataclasses import dataclass, fields
 from miniscutil import Current
 from pytest import raises
 
+
 def test_current():
     @dataclass
     class Hello(Current):
@@ -48,4 +49,3 @@ def test_current():
 
     with raises(NotImplementedError):
         World.current()
-
