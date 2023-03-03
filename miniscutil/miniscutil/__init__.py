@@ -13,6 +13,7 @@ from .misc import (
     map_keys,
     map_values,
     partition,
+    append_url_params,
 )
 from .adapt import adapt, restore, register_adapter
 from .current import Current

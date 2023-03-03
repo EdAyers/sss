@@ -26,6 +26,7 @@ try:
 except ImportError:
     from typing_extensions import TypeGuard
 
+
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,8 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
     Ideally, ``ofdict`` should be defined such that ``ofdict(type(x), json.loads(MyJsonEncoder().dumps(x)))`` is deep-equal to ``x`` for all ``x``.
 
     Similar to ` cattrs.structure <https://cattrs.readthedocs.io/en/latest/structuring.html#what-you-can-structure-and-how/>`_.
+
+    [todo] I am hoping to retire this in favour of Pydantic.
     """
     if A is Any:
         return a  # type: ignore

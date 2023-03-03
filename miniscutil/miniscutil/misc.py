@@ -91,3 +91,15 @@ def partition(
     # partition(is_odd, range(10)) --> 0 2 4 6 8   and  1 3 5 7 9
     t1, t2 = tee(iterable)
     return filterfalse(pred, t1), filter(pred, t2)
+
+
+def append_url_params(url: str, **params):
+    """Add the given query params dictionary to the given url."""
+    from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+
+    # https://stackoverflow.com/questions/2506379/add-params-to-given-url-in-python
+    parts = urlparse(url)
+    query = dict(parse_qsl(parts.query))
+    query.update(params)
+    parts = parts._replace(query=urlencode(query))
+    return urlunparse(parts)
