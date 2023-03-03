@@ -96,7 +96,7 @@ class BlobularApiDatabase:
         else:
             dir = cfg.local_data_path / "blobs"
             dir.mkdir(exist_ok=True)
-            big = LocalFileBlobStore(dir)
+            big = LocalFileBlobStore(local_cache_dir=dir)
         self.blobstore = SizedBlobStore(small, big, threshold=0)  # [todo]
 
     def disconnect(self):
@@ -108,3 +108,6 @@ class BlobularApiDatabase:
         t = engine_context.set(self.engine)
         yield self
         engine_context.reset(t)
+
+
+database = BlobularApiDatabase()

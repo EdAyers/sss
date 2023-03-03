@@ -2,16 +2,22 @@ from datetime import datetime, timedelta
 from typing import Any, NewType, Optional
 from uuid import UUID
 import aiohttp
-from fastapi import Depends
+from blobular.api.github_login import login_handler
+from fastapi import APIRouter, Depends
+from miniscutil.misc import append_url_params
 from starlette.requests import Request
 from pydantic import BaseModel, EmailStr, ValidationError
 from fastapi.security.utils import get_authorization_scheme_param
 from jose import ExpiredSignatureError, JWTError, jwt
 from secrets import token_urlsafe
-from dxd import transaction
+from dxd import transaction, engine_context
 import logging
+from fastapi.responses import StreamingResponse, PlainTextResponse, RedirectResponse
+from pydantic import BaseModel, SecretStr
+from starlette.requests import Request
+from starlette.datastructures import URL
 from .settings import Settings
-from .persist import ApiKey as ApiKeyEntry, User, BlobularApiDatabase as Db
+from .persist import ApiKey as ApiKeyEntry, User, BlobularApiDatabase as Db, database
 
 logger = logging.getLogger("blobular")
 
@@ -110,8 +116,73 @@ def user_of_token(token: ApiKey | JwtClaims, db: Db) -> User:
         raise AuthenticationError("unrecognized authentication token")
 
 
-def get_user(request: Request, db: Db):
+def get_user(request: Request, db: Db = Depends(database)) -> User:
     """FastAPI fixture for getting the authenticated user."""
+    assert db.engine == engine_context.get()
     token = from_request(request)
     user = user_of_token(token, db)
     return user
+
+
+router = APIRouter(prefix="/auth")
+
+
+@router.get("/github/client_id")
+def get_github_client_id():
+    """Gets the github client id that we use for authentication."""
+    # [todo] there will be an official OAuth way of saying what authentication providers we support
+    return PlainTextResponse(Settings.current().github_client_id)
+
+
+@router.get("/github/login")
+async def login(
+    request: Request,
+    code: str,
+    state: str | None = None,
+    client_loopback: Optional[str] = None,
+    db=Depends(database),
+):
+    """Login to the server. The code param should be a github authentication code.
+
+
+    Args:
+        code: GitHub authentication code.
+        state: GitHub authentication state (optional).
+        client_loopback: This means that the login was initiated by a Python client and gives the address to loop back to.
+    Todo:
+        * Make this work with general OAuth2
+
+    """
+    cfg = Settings.current()
+    assert db.engine == engine_context.get()
+    jwt = await login_handler(code, db)
+    max_age = cfg.jwt_expires.seconds
+    domain = cfg.cloud_url
+
+    headers = {
+        "Set-Cookie": f"jwt={jwt}; HttpOnly; Max-Age={max_age}; domain={domain}",
+        # [todo] are these CORS headers needed?
+        "Access-Control-Allow-Origin": "http://127.0.0.1",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept",
+    }
+    if client_loopback is not None:
+        # [todo] client_loopback should be localhost.
+        url = append_url_params(client_loopback, jwt=jwt)
+        return RedirectResponse(url, headers=headers)
+    else:
+        # this case is when they login from a browser.
+        return PlainTextResponse(jwt, headers=headers)
+
+
+@router.post("/api_key/generate")
+def generate_api_key(request: Request, db=Depends(database)):
+    token = from_request(request)
+    if not isinstance(token, JwtClaims):
+        raise AuthenticationError(
+            "you must be authenticated with a JWT to create an API key"
+        )
+    user = user_of_token(token, db)
+    key = "hs-" + token_urlsafe(16)
+    db.api_keys.insert_one(ApiKeyEntry(key=key, user_id=user.id))
+    return PlainTextResponse(key)
