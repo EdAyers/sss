@@ -179,6 +179,9 @@ def open(digest: str, path: Optional[Path] = None):
 
 def print_user_status():
     r = request("GET", "/user")
+    if r.status_code == 401:
+        print("401")
+        return
     r.raise_for_status()
     r = r.json()
     gh_username = r.get("gh_username")
@@ -200,7 +203,7 @@ def print_user_status():
 def status():
     """Prints details of the connection."""
     cfg = Settings.current()
-    print(f"server: {cfg.cloud_url}")
+    print(f"API endpoint: {cfg.cloud_url}")
     print(f"workspace: {cfg.workspace_dir}")
     try:
         print_jwt_status()

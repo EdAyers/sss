@@ -47,7 +47,7 @@ def print_jwt_status() -> bool:
         user = response.json()
         id = user.get("id")
         gh_username = user.get("gh_username")
-        print("signed in")
+        print("signed in with JWT")
         return True
     if response.status_code == 401:
         cfg.invalidate_jwt()
@@ -73,6 +73,7 @@ def print_api_key_status() -> None:
     elif response.status_code == 401:
         reason = response.text
         print(f"API key not valid: {reason}")
+        cfg.invalidate_api_key()
     else:
         print("unknown response", response.status_code, response.text)
         response.raise_for_status()
@@ -95,20 +96,22 @@ def request(
     global already_reported_connection_error
     cfg = Settings.current()
     if "Authorization" not in headers:
+        jwt = cfg.get_jwt()
         api_key = cfg.get_api_key()
-        if api_key is None:
-            if not no_auth_ok:
-                raise AuthenticationError(
-                    "no API key or authentication header found to authenticate"
-                )
-        else:
+        if api_key is not None:
             headers = {"Authorization": api_key, **headers}
-    cloud_url = cfg.cloud_url
+        elif jwt is not None:
+            headers = {"Authorization": f"Bearer {jwt}", **headers}
+        elif not no_auth_ok:
+            raise AuthenticationError(
+                "no API key or authentication header found to authenticate"
+            )
+    api_url = cfg.cloud_url + "/api"
     try:
-        r = requests.request(method, cloud_url + path, **kwargs, headers=headers)
+        r = requests.request(method, api_url + path, **kwargs, headers=headers)
         return r
     except (requests.exceptions.ConnectionError, NewConnectionError) as err:
         if not already_reported_connection_error:
-            logger.warning(f"could not reach {cloud_url}. Using in offline mode.")
+            logger.warning(f"could not reach {api_url}. Using in offline mode.")
             already_reported_connection_error = True
         raise ConnectionError from err

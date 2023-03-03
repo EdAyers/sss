@@ -19,7 +19,8 @@ Todo:
 async def get_github_client_id():
     cfg = Settings.current()
     async with aiohttp.ClientSession(cfg.cloud_url) as session:
-        async with session.get("/auth/github/client_id") as resp:
+        async with session.get("/api/auth/github/client_id") as resp:
+            resp.raise_for_status()
             return await resp.text()
 
 
@@ -47,7 +48,7 @@ async def loopback_login(*, autoopen=False) -> str:
     query_params = {
         "client_id": github_client_id,  # Production GitHub OAuth app client id
         "scope": "user:email",
-        "redirect_uri": f"{cfg.cloud_url}/auth/github/login?client_loopback={miniserver_url}",
+        "redirect_uri": f"{cfg.cloud_url}/api/auth/github/login?client_loopback={miniserver_url}",
     }
     query_params = urllib.parse.urlencode(query_params)
     base_url = "https://github.com/login/oauth/authorize"
@@ -96,15 +97,16 @@ async def generate_api_key(label: str):
     """
     cfg = Settings.current()
     jwt = cfg.get_jwt()
-    cloud_url = cfg.cloud_url
     if jwt is None:
         raise AuthenticationError("User has not logged in.")
 
-    logger.debug(f"Asking {cloud_url} for a new API key with label {label}.")
+    logger.debug(f"Asking {cfg.cloud_url} for a new API key with label {label}.")
     async with aiohttp.ClientSession(
-        cloud_url, headers={"Authorization": f"Bearer {jwt}"}
+        cfg.cloud_url, headers={"Authorization": f"Bearer {jwt}"}
     ) as session:
-        async with session.post("/api_key/generate", params={"label": label}) as resp:
+        async with session.post(
+            "/api/auth/api_key/generate", params={"label": label}
+        ) as resp:
             if resp.status == 401:
                 msg = await resp.text()
                 logger.debug(msg)

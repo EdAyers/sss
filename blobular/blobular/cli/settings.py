@@ -14,10 +14,7 @@ logger = logging.getLogger(APP_NAME)
 class Settings(BaseSettings, Current):
     """This dataclass contains all of the configuration needed to use hitsave."""
 
-    cloud_url: str = Field(
-        default="https://blobular.edayers.com"
-    )  # [todo] switch for local mode.
-    """ URL for cloud API server. """
+    cloud_url: str = Field(default="https://blobular.edayers.com")
 
     web_url: str = Field(default="hitsave.io")
     """ URL for the website. """
@@ -67,11 +64,17 @@ class Settings(BaseSettings, Current):
         persist_config(self.secrets_file, ("jwt", self.cloud_url), None)
         self.jwt = None
 
+    def invalidate_api_key(self):
+        persist_config(self.secrets_file, ("api_key", self.cloud_url), None)
+        self.api_key = None
+
     def get_api_key(self) -> Optional[str]:
         if self.api_key is None:
             try:
                 key = get_config(self.secrets_file, ("api_key", self.cloud_url))
-                assert isinstance(key, str)
+                if key is None:
+                    logger.debug(f"API key for {self.cloud_url} was invalidated")
+                    return None
             except LookupError:
                 logger.debug(
                     f"no API key for {self.cloud_url} found in {self.secrets_file}"
