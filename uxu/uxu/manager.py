@@ -40,7 +40,14 @@ class Manager:
     def __init__(self):
         self.id = fresh_id()
         self.event_table = {}
+        self.event_tasks = set()
         self.pending_patches = MessageQueue()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.dispose()
 
     def initialize(self, html: Html):
         with set_vdom_context(self):
@@ -72,6 +79,8 @@ class Manager:
         return render(self.root)
 
     def dispose(self):
+        for t in self.event_tasks:
+            t.cancel()
         dispose(self.root)
         delattr(self, "root")
         self.pending_patches.clear()
@@ -112,3 +121,11 @@ class Manager:
 
     async def wait_patches(self):
         return await self.pending_patches.pop_many()
+
+
+def render_static(html: Html) -> list[Rendering]:
+    m = Manager()
+    m.initialize(html)
+    r = m.render()
+    m.dispose()
+    return r

@@ -9,6 +9,11 @@ from .compat import ParamSpec
 
 P = ParamSpec("P")
 
+"""
+[todo] use the https://github.com/Knio/dominate libarary.
+or at least mimick it.
+ """
+
 
 @overload
 def h(tag: str, attrs: dict, *children: Html, key: Optional[str] = None) -> ElementSpec:

@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Union
+from textwrap import indent
+from html import escape
 
 """ A rendering is the thing that we actually send over the wire to Javascript. """
 
@@ -30,6 +32,9 @@ class RenderedText:
     id: Any
     kind: str = field(default="text")
 
+    def static(self):
+        return self.value
+
 
 @dataclass
 class RenderedElement:
@@ -39,12 +44,41 @@ class RenderedElement:
     children: list["Rendering"]
     kind: str = field(default="element")
 
+    def static(self):
+        from dominate.dom_tag import dom_tag
+        import dominate.tags as tags
+
+        def static_render_attr(k, v):
+            if isinstance(v, str):
+                return v
+            elif isinstance(v, dict):
+                assert k == "style"
+                xs = "; ".join(f"{k}: {s}" for k, s in v.items())
+                return f'{k}="{xs}"'
+            else:
+                raise TypeError()
+
+        attrs = {
+            k: static_render_attr(k, v)
+            for k, v in self.attrs.items()
+            if not isinstance(v, EventHandler)
+        }
+        attrs = {**self.attrs, "data-uxu-id": self.id}
+        cls = getattr(tags, self.tag)
+        children = [c.static() for c in self.children]
+        elt = cls(*children, **attrs)
+        assert isinstance(elt, dom_tag)
+        return elt
+
 
 @dataclass
 class RenderedFragment:
     id: Any
     children: list["Rendering"]
     kind: str = field(default="fragment")
+
+    def static(self):
+        return [c.static() for c in self.children]
 
 
 @dataclass
