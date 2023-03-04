@@ -96,6 +96,14 @@ def invalid_params(message: str) -> ResponseError:
     return ResponseError(ErrorCode.invalid_params, message)
 
 
+def internal_error(message: str) -> ResponseError:
+    return ResponseError(ErrorCode.internal_error, message)
+
+
+def server_not_initialized(message: str) -> ResponseError:
+    return ResponseError(ErrorCode.server_not_initialized, message)
+
+
 @dataclass
 class Response:
     """JSON-RPC response.
@@ -170,7 +178,17 @@ server_count = 0
 RequestId = Union[str, int]
 
 
+class InitializationMode(Enum):
+    NoInit = 0
+    """ No initialization required. """
+    ExpectInit = 1
+    """ We expect to receive an initialize request from the peer. """
+    SendInit = 2
+    """ We should send an initialize request to the peer. """
+
+
 class RpcServerStatus(Enum):
+    preinit = 0
     running = 1
     shutdown = 2
 
@@ -204,6 +222,7 @@ class RpcServer:
     dispatcher: Dispatcher
     status: RpcServerStatus
     transport: Transport
+    init_mode: InitializationMode
     request_counter: int
     """ Unique id for each request I make to the peer. """
     my_requests: Dict[RequestId, Future[Any]]
@@ -218,7 +237,7 @@ class RpcServer:
         transport: Transport,
         dispatcher=Dispatcher(),
         name=None,
-        status=RpcServerStatus.running,
+        init_mode: InitializationMode = InitializationMode.NoInit,
     ):
         global server_count
         server_count += 1
@@ -226,7 +245,11 @@ class RpcServer:
             self.name = f"<{type(self).__name__} {server_count}>"
         else:
             self.name = name
-        self.status = status
+        self.init_mode = init_mode
+        if init_mode == InitializationMode.NoInit:
+            self.status = RpcServerStatus.running
+        else:
+            self.status = RpcServerStatus.preinit
         self.transport = transport
         self.dispatcher = dispatcher
         self.my_requests = {}
@@ -241,10 +264,19 @@ class RpcServer:
         await self.transport.send(r.to_bytes())
 
     async def notify(self, method: str, params: Optional[Any]):
+        if self.status != RpcServerStatus.running:
+            raise RuntimeError(
+                f"can't send notifications while server is in {self.status.name} state"
+            )
         req = Request(method=method, params=params)
         await self.send(req)
 
     async def request(self, method: str, params: Optional[Any]) -> Any:
+        if self.status != RpcServerStatus.running:
+            if self.init_mode != InitializationMode.SendInit or method != "initialize":
+                raise RuntimeError(
+                    f"can't make new requests while server is in {self.status.name} state"
+                )
         self.request_counter += 1
         id = self.request_counter
         req = Request(method=method, id=id, params=params)
@@ -254,7 +286,12 @@ class RpcServer:
         result = await fut
         return result
 
-    async def serve_forever(self):
+    async def _send_init(self, init_param):
+        await self.request("initialize", init_param)
+        self.status = RpcServerStatus.running
+        await self.notify("initialized", None)
+
+    async def serve_forever(self, init_param=None):
         """Runs forever. Serves your client.
 
         It will return when:
@@ -267,6 +304,21 @@ class RpcServer:
             - TransportClosedError:the transport closes with an error
             - TransportError: some other error at the transport level occurred
         """
+        # [todo] add a lock to prevent multiple server loops from running at the same time.
+
+        if self.init_mode == InitializationMode.SendInit:
+            if self.status != RpcServerStatus.preinit:
+                raise RuntimeError(
+                    f"can't start server while server is in {self.status.name} state"
+                )
+            if init_param is None:
+                raise ValueError(
+                    f"init_param must be provided in {self.init_mode.name} mode"
+                )
+            task = asyncio.create_task(self._send_init(init_param))
+            self.notification_tasks.add(task)
+            task.add_done_callback(self.notification_tasks.discard)
+
         while True:
             try:
                 data = await self.transport.recv()
@@ -324,7 +376,7 @@ class RpcServer:
             # this is a request.
             req = ofdict(Request, message)
             if req.method == "exit":
-                if not self.status == RpcServerStatus.shutdown:
+                if self.status != RpcServerStatus.shutdown:
                     logger.warning("exit notification received before shutdown request")
                 # https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#exit
                 raise ExitNotification()
@@ -372,6 +424,21 @@ class RpcServer:
                 assert result is None, "notification handlers must return None"
 
     async def _on_request_core(self, req: Request):
+        if self.status == RpcServerStatus.preinit:
+            INIT_METHOD = "inititialize"
+            if self.init_mode == InitializationMode.ExpectInit:
+                if req.method == INIT_METHOD:
+                    self.status = RpcServerStatus.running
+                else:
+                    raise server_not_initialized(
+                        f"please request method {INIT_METHOD} before requesting anything else"
+                    )
+            elif self.init_mode == InitializationMode.SendInit:
+                raise server_not_initialized(
+                    f"please wait for me to send a {INIT_METHOD} request"
+                )
+            else:
+                raise internal_error("invalid server state")
         if self.status == RpcServerStatus.shutdown:
             if req.method == "shutdown":
                 if "shutdown" in self.dispatcher:
