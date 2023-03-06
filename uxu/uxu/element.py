@@ -12,6 +12,7 @@ from .vdom import (
     create,
     dispose,
     fresh_id,
+    hydrate_lists,
     patch,
     reconcile_lists,
     vdom_context,
@@ -65,6 +66,37 @@ class Element(Vdom):
         )
         return elt
 
+    @classmethod
+    def hydrate(cls, r : Rendering, spec : ElementSpec) -> "Element":
+        if not isinstance(r, RenderedElement) or r.tag != spec.tag or r.key != spec.key:
+            logger.debug(f"not a matching element, replacing")
+            new_element = cls.create(spec)
+            patch(ReplaceElementPatch(r.id, new_element.render()))
+            return new_element
+        else:
+            id = r.id
+            new_attrs = {}
+            # [todo] abstract this attrs, registering loop.
+            for k, v in spec.attrs.items():
+                if callable(v):
+                    handler_id = f"{id}/{k}"
+                    vdom_context.get()._register_event(handler_id, v)
+                    v = EventHandler(handler_id)
+                new_attrs[k] = v
+            diff = dict_diff(r.attrs, new_attrs)
+            remove = list(diff.rm)
+            add = {k: new_attrs[k] for k in diff.add}
+            mod = {k: v2 for k, (v1, v2) in diff.mod.items() if v1 != v2}
+            patch(
+                ModifyAttributesPatch(remove=remove, add={**add, **mod}, element_id=id)
+            )
+            children, reorder = hydrate_lists(r.children, spec.children)
+            patch(ModifyChildrenPatch(id, reorder))
+            elt = cls(
+                spec.tag, attrs = new_attrs, children = children, id = r.id, key = spec.key
+            )
+            return elt
+
     def dispose(self):
         # delete references to event handlers.
         for k, v in self.attrs.items():
@@ -76,9 +108,11 @@ class Element(Vdom):
         return RenderedElement(
             id=self.id,
             tag=self.tag,
+            key = self.key,
             attrs=self.attrs,
             children=[c.render() for c in self.children],
         )
+
 
     def reconcile_attrs(self, new_attrs_spec: dict) -> dict:
         for k, v in self.attrs.items():
@@ -93,6 +127,7 @@ class Element(Vdom):
             new_attrs[k] = v
         diff = dict_diff(self.attrs, new_attrs)
         remove = list(diff.rm)
+        # [todo] need to unregister event handlers in diff.rm?
         add = {k: new_attrs[k] for k in diff.add}
         mod = {k: v2 for k, (v1, v2) in diff.mod.items()}
         patch(
@@ -113,14 +148,7 @@ class Element(Vdom):
         self.reconcile_attrs(new_spec.attrs)
         children, r = reconcile_lists(self.children, new_spec.children)
         # [todo] apply expander to r here.
-        patch(
-            ModifyChildrenPatch(
-                children_length_start=r.l1_len,
-                element_id=self.id,
-                remove_these=r.remove_these,
-                then_insert_these=r.then_insert_these,
-            )
-        )
+        patch(ModifyChildrenPatch(element_id=self.id, reorder=r))
         self.tag = new_spec.tag
         self.children = children
         return self

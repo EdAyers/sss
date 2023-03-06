@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from .rendering import RenderedText, Rendering
-from .patch import InvalidatePatch
+from .patch import InvalidatePatch, ReplaceElementPatch
 from .vdom import Id, NormSpec, Vdom, patch, fresh_id, to_html
 
 
@@ -12,6 +12,16 @@ class TextNodeSpec(NormSpec):
 
     def create(self):
         return TextNode(key=self.key, id=fresh_id(), value=self.value)
+
+    def hydrate(self, r: Rendering) -> "TextNode":
+        if isinstance(r, RenderedText) and r.key == self.key:
+            return TextNode(key=self.key, id=r.id, value=r.value)
+        else:
+            new_element = self.create()
+            patch(
+                ReplaceElementPatch(element_id=r.id, new_element=new_element.render())
+            )
+            return new_element
 
     @property
     def key(self):
@@ -38,11 +48,13 @@ class TextNode(Vdom):
         return RenderedText(self.value, self.id)
 
     def reconcile(self, new_spec: TextNodeSpec) -> "TextNode":
-        assert isinstance(new_spec, TextNodeSpec)
-        # [todo] patch
-        patch(InvalidatePatch())
-        self.dispose()
-        return new_spec.create()
+        if isinstance(new_spec, TextNodeSpec) and new_spec.key == self.key:
+            return self
+        else:
+            self.dispose()
+            x = new_spec.create()
+            patch(ReplaceElementPatch(element_id=self.id, new_element=x.render()))
+            return x
 
 
 @to_html.register(str)

@@ -227,6 +227,10 @@ class Reorder(Generic[A]):
         return cls(l1_len=length, l2_len=length, remove_these={}, then_insert_these={})
 
     @property
+    def is_identity(self):
+        return len(self.remove_these) == 0 and len(self.then_insert_these) == 0
+
+    @property
     def deletions(self):
         """Get the indices of items in the first list that are deleted."""
         for i in self.remove_these.keys():

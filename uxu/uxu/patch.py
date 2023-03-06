@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any, Union
 
 from .rendering import Rendering
+from .listdiff import Reorder
 
 """
 [todo] ABC
@@ -36,14 +37,13 @@ class ModifyAttributesPatch:
 @dataclass
 class ModifyChildrenPatch:
     element_id: str
-    children_length_start: int
-    remove_these: dict
-    then_insert_these: dict
+    reorder: Reorder[Rendering]
     kind: str = field(default="modify-children")
 
     @property
     def is_empty(self) -> bool:
-        return len(self.remove_these) == 0 and len(self.then_insert_these) == 0
+        return self.reorder.is_identity
+
 
 
 @dataclass

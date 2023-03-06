@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import inspect
 import logging
 from typing import Any, Callable, Optional
@@ -10,6 +10,7 @@ from .vdom import (
     Vdom,
     dispose,
     fresh_id,
+    hydrate_lists,
     reconcile_lists,
     create,
     render,
@@ -29,7 +30,18 @@ class EventArgs:
     params: Optional[Any]
 
 
+@dataclass
+class RootRendering(Rendering):
+    id: Id
+    children: list[Rendering]
+    key: Any = field(default=None)
+
+    def static(self):
+        raise RuntimeError("RootRendering can't be statically rendered")
+
+
 class Manager:
+    is_static: bool
     id: Id
 
     event_table: dict[str, Callable]
@@ -37,11 +49,14 @@ class Manager:
     root: list[Vdom]
     pending_patches: MessageQueue[Patch]
 
-    def __init__(self):
-        self.id = fresh_id()
+    def __init__(self, spec: Optional[Html] = None, is_static: bool = False):
+        self.is_static = is_static
+
         self.event_table = {}
         self.event_tasks = set()
         self.pending_patches = MessageQueue()
+        if spec is not None:
+            self.initialize(spec)
 
     def __enter__(self):
         return self
@@ -50,9 +65,29 @@ class Manager:
         self.dispose()
 
     def initialize(self, html: Html):
+        if self.is_initialized:
+            raise RuntimeError(
+                "Manager is already initialized, can't initialize. Use update() instead."
+            )
         with set_vdom_context(self):
+            self.id = fresh_id()
             spec = normalise_html(html)
             self.root = create(spec)
+
+    def hydrate(self, old: RootRendering, html: Html):
+        if self.is_initialized:
+            raise RuntimeError("Manager is already initialized, can't hydrate")
+        with set_vdom_context(self):
+            self.id = old.id
+            spec = normalise_html(html)
+            new_root, reorder = hydrate_lists(old.children, spec)
+            self.root = new_root
+            self._patch(
+                ModifyChildrenPatch(
+                    element_id=self.id,
+                    reorder=reorder,
+                )
+            )
 
     def update(self, html: Html):
         if not self.is_initialized:
@@ -64,9 +99,7 @@ class Manager:
             self._patch(
                 ModifyChildrenPatch(
                     element_id=self.id,
-                    remove_these=reorder.remove_these,
-                    then_insert_these=reorder.then_insert_these,
-                    children_length_start=reorder.l1_len,
+                    reorder=reorder,
                 )
             )
 
@@ -74,9 +107,13 @@ class Manager:
     def is_initialized(self):
         return hasattr(self, "root")
 
-    def render(self) -> list[Rendering]:
+    def render(self) -> RootRendering:
         self.pending_patches.clear()
-        return render(self.root)
+        children = render(self.root)
+        return RootRendering(
+            id=self.id,
+            children=children,
+        )
 
     def dispose(self):
         for t in self.event_tasks:
@@ -84,6 +121,7 @@ class Manager:
         dispose(self.root)
         delattr(self, "root")
         self.pending_patches.clear()
+        self.event_table.clear()
 
     def _patch(self, patch: Patch):
         if patch.is_empty:
@@ -91,14 +129,20 @@ class Manager:
         self.pending_patches.push(patch)
 
     def _register_event(self, k: str, handler: Callable):
+        if self.is_static:
+            return
         assert k not in self.event_table
         self.event_table[k] = handler
 
     def _unregister_event(self, k: str):
+        if self.is_static:
+            return
         assert k in self.event_table
         del self.event_table[k]
 
     def handle_event(self, params: EventArgs):
+        if self.is_static:
+            raise RuntimeError("cannot handle events in static mode")
         with set_vdom_context(self):
             assert isinstance(params, EventArgs)
             logger.debug(f"handling {params.handler_id}")
@@ -120,12 +164,12 @@ class Manager:
         # [todo] trigger a re-render
 
     async def wait_patches(self):
+        if self.is_static:
+            raise RuntimeError("cannot handle patching loop in static mode")
         return await self.pending_patches.pop_many()
 
 
-def render_static(html: Html) -> list[Rendering]:
-    m = Manager()
-    m.initialize(html)
+def render_static(html: Html) -> RootRendering:
+    m = Manager(spec=html, is_static=True)
     r = m.render()
-    m.dispose()
     return r

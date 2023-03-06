@@ -13,8 +13,9 @@ from typing import (
     Union,
     overload,
 )
+import warnings
 from .rendering import RenderedFragment, Rendering
-from .patch import ModifyChildrenPatch
+from .patch import ModifyChildrenPatch, ReplaceElementPatch
 from .vdom import (
     Html,
     NormSpec,
@@ -23,6 +24,8 @@ from .vdom import (
     create,
     dispose,
     fresh_id,
+    hydrate,
+    hydrate_lists,
     normalise_html,
     patch,
     vdom_context,
@@ -116,11 +119,16 @@ class EffectHook:
     def evaluate(self):
         callback = self.callback
         assert callable(callback)
-        self.dispose()
-        if asyncio.iscoroutinefunction(callback):
-            self.task = asyncio.create_task(callback())
+        if vdom_context.get().is_static:
+            logging.debug(
+                f"skipping effect call because vdom context is in static mode"
+            )
         else:
-            callback()
+            self.dispose()
+            if asyncio.iscoroutinefunction(callback):
+                self.task = asyncio.create_task(callback())
+            else:
+                callback()
 
     def reconcile(self, new_hook: "EffectHook"):
         assert type(new_hook) == type(self)
@@ -165,6 +173,9 @@ class FiberSpec(Generic[P], NormSpec):
     def create(self):
         return Fiber.create(self)
 
+    def hydrate(self, r: Rendering) -> "Fiber":
+        return Fiber.hydrate(r, self)
+
     def __str__(self):
         return self.name
 
@@ -194,28 +205,53 @@ class Fiber(Vdom):
     def __str__(self) -> str:
         return f"<{self.name} {self.id}>"
 
-    def __init__(self, spec: "FiberSpec"):
+    def _hydrate(self, render: Rendering) -> None:
+        if not isinstance(render, RenderedFragment):
+            logger.debug(f"expected RenderedFragment, got {type(render)}")
+            self._create()
+            patch(ReplaceElementPatch(element_id=render.id, new_element=self.render()))
+            return
+        self.id = render.id
+        with self:
+            s = self.component(*self.props_args, **self.props_kwargs)
+            children, reorder = hydrate_lists(render.children, normalise_html(s))
+            patch(ModifyChildrenPatch(self.id, reorder))
+            self.rendered = children
+
+    def _create(self):
+        if hasattr(self, "rendered"):
+            raise RuntimeError("fiber is already initialized")
         self.id = fresh_id()
-        self.key = spec.key  # type: ignore
+        with self:
+            s = self.component(*self.props_args, **self.props_kwargs)
+            self.rendered = create(normalise_html(s))
+
+    def start(self):
+        if hasattr(self, "update_loop_task"):
+            raise RuntimeError("fiber is already running")
         self.invalidated_event = asyncio.Event()
-        component = spec.component
-        if not hasattr(component, "__name__"):
-            logger.warning(f"Please name component {component}.")
-        self.component = component
+        self.update_loop_task = asyncio.create_task(self._update_loop())
+
+    def __init__(self, spec: "FiberSpec"):
+        # [todo] enforce this shouldn't be called directly, use Fiber.create or Fiber.hydrate
+        self.key = spec.key  # type: ignore
+        self.component = spec.component
         self.props_args = spec.props_args
         self.props_kwargs = spec.props_kwargs
-        assert not hasattr(self, "rendered") and not hasattr(
-            self, "hooks"
-        ), "already created"
+        if not hasattr(self.component, "__name__"):
+            logger.warning(f"Please name component {self.component}.")
         self.hooks = []
         self.hook_idx = 0
-        t = fiber_context.set(self)
-        s = self.component(*self.props_args, **self.props_kwargs)
-        self.rendered = create(normalise_html(s))
-        fiber_context.reset(t)
-        self.update_loop_task = asyncio.create_task(self.update_loop())
+        # now you need to run either _create() or _hydrate()
 
-    async def update_loop(self):
+    def __enter__(self):
+        self._reset_ticket = fiber_context.set(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        fiber_context.reset(self._reset_ticket)
+
+    async def _update_loop(self):
         while True:
             await self.invalidated_event.wait()
             logger.debug(f"{str(self)} rerendering.")
@@ -228,15 +264,23 @@ class Fiber(Vdom):
     def dispose(self):
         # [todo] can I just use GC?
         assert hasattr(self, "hooks")
-        assert hasattr(self, "rendered"), "fiber is not rendered"
-        dispose(self.rendered)
+        assert hasattr(
+            self, "rendered"
+        ), "Fiber not initialized with _create or _hydrate"
+        if hasattr(self, "rendered"):
+            dispose(self.rendered)
         for hook in reversed(self.hooks):
             hook.dispose()
-        self.update_loop_task.cancel()
+        if hasattr(self, "update_loop_task"):
+            self.update_loop_task.cancel()
 
     def invalidate(self):
         """Called when a hook's callback is invoked, means that a re-render must occur."""
-        logger.debug(f"{str(self)} invalidated.")
+        logger.debug(f"{str(self)} invalidated")
+        if vdom_context.get().is_static:
+            warnings.warn(
+                "fiber was invalidated but vdom context is in static mode, so fiber update loop is not running"
+            )
         self.invalidated_event.set()
 
     def reconcile_hook(self, hook: H) -> H:
@@ -285,14 +329,7 @@ class Fiber(Vdom):
         self.hooks = self.hooks[:l]
         for hook in reversed(old_hooks):
             hook.dispose()
-        patch(
-            ModifyChildrenPatch(
-                element_id=self.id,
-                remove_these=reorder.remove_these,
-                then_insert_these=reorder.then_insert_these,
-                children_length_start=reorder.l1_len,
-            )
-        )
+        patch(ModifyChildrenPatch(self.id, reorder))
         return
 
     def reconcile(self, new_spec: "FiberSpec") -> "Fiber":
@@ -302,7 +339,9 @@ class Fiber(Vdom):
         # means we should rerender.
         if new_spec.name != self.name or self.component is not new_spec.component:
             self.dispose()
-            new_fiber = Fiber(new_spec)
+            new_fiber = Fiber.create(new_spec)
+            new_render: Rendering = new_fiber.render()
+            patch(ReplaceElementPatch(element_id=self.id, new_element=new_render))
             return new_fiber
         # [todo] check whether the props have changed here
         if (
@@ -323,8 +362,20 @@ class Fiber(Vdom):
         )
 
     @classmethod
-    def create(cls, spec: FiberSpec):
-        return cls(spec)
+    def create(cls, spec: FiberSpec) -> "Fiber":
+        f = cls(spec)
+        f._create()
+        if not vdom_context.get().is_static:
+            f.start()
+        return f
+
+    @classmethod
+    def hydrate(cls, render: Rendering, spec: FiberSpec) -> "Fiber":
+        f = cls(spec)
+        f._hydrate(render)
+        if not vdom_context.get().is_static:
+            f.start()
+        return f
 
 
 fiber_context: ContextVar[Fiber] = ContextVar("fiber_context")

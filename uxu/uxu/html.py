@@ -21,7 +21,7 @@ def h(tag: str, attrs: dict, *children: Html, key: Optional[str] = None) -> Elem
 
 
 @overload
-def h(tag: Component[P], *args: P.args, **kwargs: P.kwargs) -> FiberSpec[P]:
+def h(tag: Component[P], *args: P.args, **kwargs: P.kwargs) -> FiberSpec:
     ...
 
 

@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Union
 from textwrap import indent
@@ -26,8 +27,19 @@ class EventHandler:
 RenderedAttrVal = Union[EventHandler, str, dict]
 
 
+# [todo] abstract class
+class Rendering(ABC):
+    id: str
+    kind: str
+    key: Any
+
+    @abstractmethod
+    def static(self):
+        raise NotImplementedError()
+
+
 @dataclass
-class RenderedText:
+class RenderedText(Rendering):
     value: str
     id: Any
     kind: str = field(default="text")
@@ -35,13 +47,18 @@ class RenderedText:
     def static(self):
         return self.value
 
+    @property
+    def key(self):
+        return hash(('text', self.value))
+
 
 @dataclass
-class RenderedElement:
+class RenderedElement(Rendering):
     id: Any
     tag: str
     attrs: dict[str, RenderedAttrVal]
     children: list["Rendering"]
+    key: Any = field(default = None)
     kind: str = field(default="element")
 
     def static(self):
@@ -72,9 +89,10 @@ class RenderedElement:
 
 
 @dataclass
-class RenderedFragment:
+class RenderedFragment(Rendering):
     id: Any
     children: list["Rendering"]
+    key: Any = field(default=None)
     kind: str = field(default="fragment")
 
     def static(self):
@@ -85,15 +103,14 @@ class RenderedFragment:
 class RenderedWidget:
     """This is used to hook into JavaScript code."""
 
+    # [todo] make rendering
     id: Any
     name: str
     props: Any
     kind: str = field(default="widget")
 
 
-Rendering = Union[RenderedElement, RenderedText, RenderedFragment]
-
-
+# [todo] put on Rendering methods
 def iter_event_handlers(x: "Rendering"):
     if isinstance(x, RenderedElement):
         for name, v in x.attrs.items():
@@ -104,6 +121,7 @@ def iter_event_handlers(x: "Rendering"):
         yield from iter_event_handlers(child)
 
 
+# [todo] use methods on Rendering instead.
 def map_event_handlers(modify: Callable[[EventHandler], EventHandler]):
     def rec(x: Rendering) -> Rendering:
         if isinstance(x, RenderedElement):

@@ -28,6 +28,10 @@ class VdomContext(Protocol):
     def _unregister_event(self, k: str):
         ...
 
+    @property
+    def is_static(self) -> bool:
+        ...
+
 
 vdom_context: ContextVar[VdomContext] = ContextVar("vdom_context")
 
@@ -77,6 +81,10 @@ class NormSpec(ABC):
     def create(self) -> Vdom:
         ...
 
+    @abstractmethod
+    def hydrate(self, r: Rendering) -> Vdom:
+        ...
+
 
 @overload
 def create(s: NormSpec) -> Vdom:
@@ -95,6 +103,13 @@ def create(s):
         return s.create()
     else:
         raise TypeError(f"unrecognised spec {s}")
+
+
+def hydrate(r: Rendering, s: NormSpec) -> Vdom:
+    if isinstance(s, NormSpec) and isinstance(r, Rendering):
+        return s.hydrate(r)
+    else:
+        raise TypeError(f"unrecognised {r}, {s}")
 
 
 @overload
@@ -116,22 +131,41 @@ def render(s: Union[Vdom, list[Vdom]]):
         raise TypeError(f"unrecognised spec {s}")
 
 
-def reconcile_lists(
-    old: list[Vdom], new: list[NormSpec]
-) -> tuple[list[Vdom], Reorder[Vdom]]:
-    r: Reorder = listdiff([x.key for x in old], [x.key for x in new])
-    for ri in r.deletions:
-        old[ri].dispose()
+def hydrate_lists(
+    old: list[Rendering], new: list[NormSpec]
+) -> tuple[list[Vdom], Reorder[Rendering]]:
+    reorder: Reorder = listdiff([x.key for x in old], [x.key for x in new])
+    for ri in reorder.deletions:
+        pass
     new_vdom: list[Any] = [None] * len(new)
-    for i, j in r.moves:
+    for i, j in reorder.moves:
         assert new_vdom[j] is None
-        new_vdom[j] = reconcile(old[i], new[j])
-    for j in r.creations:
+        new_vdom[j] = hydrate(old[i], new[j])
+    for j in reorder.creations:
         assert new_vdom[j] is None
         new_vdom[j] = new[j].create()
     assert all(x is not None for x in new_vdom)
-    r = r.map_inserts(lambda j, _: new_vdom[j])
-    return new_vdom, r
+    reorder = reorder.map_inserts(lambda j, _: new_vdom[j].render())
+    # [todo] abstract with reconcile_lists
+    return new_vdom, reorder
+
+
+def reconcile_lists(
+    old: list[Vdom], new: list[NormSpec]
+) -> tuple[list[Vdom], Reorder[Rendering]]:
+    reorder: Reorder = listdiff([x.key for x in old], [x.key for x in new])
+    for ri in reorder.deletions:
+        old[ri].dispose()
+    new_vdom: list[Any] = [None] * len(new)
+    for i, j in reorder.moves:
+        assert new_vdom[j] is None
+        new_vdom[j] = reconcile(old[i], new[j])
+    for j in reorder.creations:
+        assert new_vdom[j] is None
+        new_vdom[j] = new[j].create()
+    assert all(x is not None for x in new_vdom)
+    reorder = reorder.map_inserts(lambda j, _: new_vdom[j].render())
+    return new_vdom, reorder
 
 
 def reconcile(old: Vdom, new: NormSpec) -> Vdom:
