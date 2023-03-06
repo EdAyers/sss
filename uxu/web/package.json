@@ -1,0 +1,13 @@
+{
+    "name": "uxu-js",
+    "description": "uxu client app",
+    "version": "0.0.1",
+    "scripts": {
+        "compile": "node ./build.mjs",
+        "watch": "node ./build.mjs --watch"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "esbuild": "^0.16.17"
+    }
+}
