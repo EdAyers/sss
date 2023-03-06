@@ -24,7 +24,8 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "miniscutil"
+  "miniscutil",
+  "websockets",
 ]
 dynamic = ["version"]
 

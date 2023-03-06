@@ -62,6 +62,8 @@ async def put_blob(
     # [todo] raise if they go over quota
     # [todo] api to upload parts
     # [todo] enforce each upload part is no larger than 100MB
+    # [todo] handle Expect: 100-Continue
+    # [todo] Content-Length should be set
     with tempfile.SpooledTemporaryFile() as f:
         async for chunk in request.stream():
             f.write(chunk)
