@@ -7,10 +7,11 @@ import logging
 import sys
 from typing import Any, Awaitable, Dict, List, Optional, Union, Coroutine
 import inspect
+import warnings
 
 from miniscutil.ofdict import MyJsonEncoder, ofdict
 import json
-from miniscutil.rpc.transport import Transport, TransportClosedError, TransportClosedOK
+from .transport import Transport, TransportClosedError, TransportClosedOK
 
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
@@ -56,6 +57,11 @@ class ErrorCode(Enum):
     request_cancelled = -32800
     """ The client cancelled a request and the server has detected the cancel. """
 
+    ### Codes that I made up for UXU
+
+    unauthorized = -32401
+    """ The user is not authorized to make this request. """
+
 
 encoder = MyJsonEncoder()
 
@@ -92,7 +98,7 @@ def method_not_found(message: str) -> ResponseError:
     return ResponseError(ErrorCode.method_not_found, message)
 
 
-def invalid_params(message: str) -> ResponseError:
+def invalid_params(message: str = "invalid params") -> ResponseError:
     return ResponseError(ErrorCode.invalid_params, message)
 
 
@@ -157,6 +163,10 @@ class Dispatcher:
     def register(self, name=None):
         def core(fn):
             funcname = name or fn.__name__
+            if funcname in self.methods:
+                warnings.warn(
+                    f"method with name {funcname} already registered, overwriting"
+                )
             self.methods[funcname] = fn
             return fn
 
@@ -197,6 +207,27 @@ class ExitNotification(Exception):
     """Thrown when the server recieved an exit notifaction from its peer."""
 
 
+def rpc_method(name: Optional[str] = None):
+    def decorator(fn):
+        setattr(fn, "rpc_method", name or fn.__name__)
+        return fn
+
+    return decorator
+
+
+def rpc_request(name: Optional[str] = None):
+    def decorator(fn):
+        assert asyncio.iscoroutinefunction(fn)
+        fn_name = name or fn.__name__
+
+        async def method(self, params):
+            return await self.request(fn_name, params)
+
+        return method
+
+    return decorator
+
+
 class RpcServer:
     """Implementation of a JSON-RPC server.
 
@@ -217,6 +248,7 @@ class RpcServer:
     [todo] rename to RpcConnection, then RpcServer and RpcClient handle the different conventions for
     lifecycle.
     [todo] add warnings if requests go unanswered for too long.
+    [todo] instead of needing to explicitly register methods, make a decorator.
     """
 
     dispatcher: Dispatcher
@@ -256,6 +288,15 @@ class RpcServer:
         self.their_requests = {}
         self.request_counter = 1000
         self.notification_tasks = set()
+
+        for name, method in inspect.getmembers(self, predicate=inspect.ismethod):
+            rpc_method = getattr(method, "rpc_method", None)
+            if rpc_method is not None:
+                # [todo] assert that the signature is correct
+                logger.debug(
+                    f"registering RPC method {rpc_method} to {method.__qualname__}"
+                )
+                self.dispatcher.register(rpc_method)(method)
 
     def __str__(self):
         return self.name
