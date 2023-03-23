@@ -88,7 +88,15 @@ class MessageQueue(Generic[T]):
     def __len__(self):
         return len(self._items)
 
-    async def pop_many(self, limit=None):
+    def tolist(self):
+        return list(self._items)
+
+    async def wait_pop_many(self, limit=None):
+        """Waits for at least one element to be in the queue and returns the whole queue.
+
+        Args:
+            limit(int | None): If an integer, will never return more than that many items.
+        """
         if len(self._items) == 0:
             await self._event.wait()
         assert len(self._items) > 0
@@ -104,16 +112,21 @@ class MessageQueue(Generic[T]):
             self._event.clear()
         return result
 
-    async def pop(self):
-        xs = await self.pop_many(limit=1)
+    async def wait_pop(self):
+        xs = await self.wait_pop_many(limit=1)
         assert len(xs) == 1
         return xs[0]
+
+    def pop_all(self):
+        xs = self.tolist()
+        self.clear()
+        return xs
 
     def __aiter__(self):
         return self
 
     async def __anext__(self):
-        return await self.pop()
+        return await self.wait_pop()
 
     def clear(self):
         self._event.clear()

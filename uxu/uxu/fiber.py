@@ -32,7 +32,7 @@ from .vdom import (
     reconcile_lists,
 )
 import logging
-from .compat import ParamSpec
+from .util import ParamSpec
 
 logger = logging.getLogger("uxu")
 

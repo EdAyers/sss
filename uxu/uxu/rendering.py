@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, is_dataclass, replace
 from typing import Any, Callable, Union
 from textwrap import indent
 from html import escape
@@ -37,6 +37,56 @@ class Rendering(ABC):
     def static(self):
         raise NotImplementedError()
 
+    def map_children(self, f):
+        if hasattr(self, "children"):
+            return self.with_children(list(map(f, getattr(self, "children"))))
+        return self
+
+    def with_children(self, children):
+        assert hasattr(self, "children")
+        assert is_dataclass(self)
+        return replace(self, children=children)
+
+    def get_children(self):
+        return getattr(self, "children", [])
+
+    def get_ids(self, acc=[]):
+        acc.append(self.id)
+        for c in self.get_children():
+            c.get_ids(acc)
+        assert len(set(acc)) == len(acc), "non-unique id"
+        return acc
+
+    def lens_id(self, id, f):
+        if self.id == id:
+            return f(self)
+        cs = getattr(self, "children", None)
+        if cs is None:
+            raise LookupError()
+        for i, c in enumerate(cs):
+            try:
+                r = c.lens_id(id, f)
+            except LookupError:
+                continue
+            if not isinstance(r, Rendering):
+                raise TypeError("function must return rendering")
+            cs = cs.copy()
+            cs[i] = r
+            return replace(self, children=cs)  # type: ignore
+        raise LookupError()
+
+
+@dataclass
+class RootRendering(Rendering):
+    """Rendering at the root of the uxu mount point."""
+
+    id: Any
+    children: list[Rendering]
+    key: Any = field(default=None)
+
+    def static(self):
+        raise RuntimeError("RootRendering can't be statically rendered")
+
 
 @dataclass
 class RenderedText(Rendering):
@@ -49,7 +99,7 @@ class RenderedText(Rendering):
 
     @property
     def key(self):
-        return hash(('text', self.value))
+        return hash(("text", self.value))
 
 
 @dataclass
@@ -58,7 +108,7 @@ class RenderedElement(Rendering):
     tag: str
     attrs: dict[str, RenderedAttrVal]
     children: list["Rendering"]
-    key: Any = field(default = None)
+    key: Any = field(default=None)
     kind: str = field(default="element")
 
     def static(self):

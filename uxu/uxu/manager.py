@@ -6,7 +6,6 @@ from typing import Any, Callable, Optional
 from .html import Html
 from .vdom import (
     Id,
-    Rendering,
     Vdom,
     dispose,
     fresh_id,
@@ -18,6 +17,7 @@ from .vdom import (
     set_vdom_context,
 )
 from .patch import ModifyChildrenPatch, Patch
+from .rendering import RootRendering, Rendering
 from miniscutil.asyncio_helpers import MessageQueue
 
 logger = logging.getLogger("uxu")
@@ -28,16 +28,6 @@ class EventArgs:
     handler_id: str
     name: str
     params: Optional[Any]
-
-
-@dataclass
-class RootRendering(Rendering):
-    id: Id
-    children: list[Rendering]
-    key: Any = field(default=None)
-
-    def static(self):
-        raise RuntimeError("RootRendering can't be statically rendered")
 
 
 class Manager:
@@ -62,7 +52,8 @@ class Manager:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.dispose()
+        if self.is_initialized:
+            self.dispose()
 
     def initialize(self, html: Html):
         if self.is_initialized:
@@ -116,10 +107,13 @@ class Manager:
         )
 
     def dispose(self):
+        if not self.is_initialized:
+            raise RuntimeError("Manager is not initialized")
         for t in self.event_tasks:
             t.cancel()
-        dispose(self.root)
-        delattr(self, "root")
+        with set_vdom_context(self):
+            dispose(self.root)
+            delattr(self, "root")
         self.pending_patches.clear()
         self.event_table.clear()
 
@@ -166,7 +160,13 @@ class Manager:
     async def wait_patches(self):
         if self.is_static:
             raise RuntimeError("cannot handle patching loop in static mode")
-        return await self.pending_patches.pop_many()
+        return await self.pending_patches.wait_pop_many()
+
+    def get_patches(self):
+        if self.is_static:
+            return []
+        else:
+            return self.pending_patches.pop_all()
 
 
 def render_static(html: Html) -> RootRendering:

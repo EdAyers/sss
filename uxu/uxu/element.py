@@ -38,6 +38,9 @@ class ElementSpec(NormSpec):
     def create(self) -> "Element":
         return Element.create(self)
 
+    def hydrate(self, r):
+        return Element.hydrate(r, self)
+
 
 @dataclass
 class Element(Vdom):
@@ -67,7 +70,7 @@ class Element(Vdom):
         return elt
 
     @classmethod
-    def hydrate(cls, r : Rendering, spec : ElementSpec) -> "Element":
+    def hydrate(cls, r: Rendering, spec: ElementSpec) -> "Element":
         if not isinstance(r, RenderedElement) or r.tag != spec.tag or r.key != spec.key:
             logger.debug(f"not a matching element, replacing")
             new_element = cls.create(spec)
@@ -93,7 +96,7 @@ class Element(Vdom):
             children, reorder = hydrate_lists(r.children, spec.children)
             patch(ModifyChildrenPatch(id, reorder))
             elt = cls(
-                spec.tag, attrs = new_attrs, children = children, id = r.id, key = spec.key
+                spec.tag, attrs=new_attrs, children=children, id=r.id, key=spec.key
             )
             return elt
 
@@ -108,11 +111,10 @@ class Element(Vdom):
         return RenderedElement(
             id=self.id,
             tag=self.tag,
-            key = self.key,
+            key=self.key,
             attrs=self.attrs,
             children=[c.render() for c in self.children],
         )
-
 
     def reconcile_attrs(self, new_attrs_spec: dict) -> dict:
         for k, v in self.attrs.items():

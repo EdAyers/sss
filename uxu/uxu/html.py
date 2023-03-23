@@ -5,7 +5,7 @@ from .textnode import TextNodeSpec
 from .vdom import Html, NormSpec, normalise_html
 from .element import ElementSpec
 from .fiber import Component, FiberSpec
-from .compat import ParamSpec
+from .util import ParamSpec
 
 P = ParamSpec("P")
 
@@ -45,7 +45,17 @@ def h(tag, attrs, *children: Html, key=None, **kwargs) -> Union[ElementSpec, Fib
 # [todo] type-safe html elements.
 # [todo] type-safe CSS inline styles.
 
-div = partial(h, tag="div")
-p = partial(h, tag="p")
-h1 = partial(h, tag="h1")
-h2 = partial(h, tag="h2")
+
+def alias(tag):
+    def core(*children, **attrs):
+        return h(tag, attrs, *children)
+
+    return core
+
+
+def img(src: str, alt="image"):
+    return h("img", dict(src=src, alt=alt))
+
+
+div = alias("div")
+p = alias("p")

@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "uxu"
-description = ''
+description = 'Server-side interactive HTML engine.'
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 license = "MIT"
 keywords = []
 authors = [
@@ -15,8 +15,6 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.7",
-  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -26,6 +24,7 @@ classifiers = [
 dependencies = [
   "miniscutil",
   "websockets",
+  "html5lib",
 ]
 dynamic = ["version"]
 
@@ -67,6 +66,7 @@ exclude_lines = [
 [tool.hatch.envs.test]
 dependencies = [
   "pytest", "pytest-cov", "hypothesis", "pytest-snapshot",
+  "pytest-asyncio",
   "numpy",
   "miniscutil @ {root:uri}/../miniscutil",
 ]
