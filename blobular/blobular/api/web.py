@@ -164,13 +164,11 @@ async def read_root(user: User = Depends(try_get_user), db: Db = Depends(databas
             rel="stylesheet",
             href="https://unpkg.com/tachyons@4.12.0/css/tachyons.min.css",
         )
-        tails = ["", "-aile", "-curly-slab", "-curly", "-etoile", "-slab"]
-        for tail in tails:
-            font = "iosevka" + tail
-            t.link(
-                rel="stylesheet",
-                href=f"https://cdn.jsdelivr.net/gh/aymanbagabas/iosevka-fonts@v11.1.1/dist/{font}/{font}.min.css",
-            )
+        # fonts = [ "iosevka", "iosevka-aile", "iosevka-curly-slab", "iosevka-curly", "iosevka-etoile", "iosevka-slab"]
+        t.link(
+            rel="stylesheet",
+            href=f"https://cdn.jsdelivr.net/gh/aymanbagabas/iosevka-fonts@v11.1.1/dist/iosevka-slab/iosevka-slab.min.css",
+        )
         t.style(
             "body { font-family: Iosevka Slab Web, monospace;}",
             "th { text-align: left; }",
