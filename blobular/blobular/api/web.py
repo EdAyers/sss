@@ -110,6 +110,24 @@ def make_the_table(db: Db, user: User):
     blobs = list(
         db.blobs.select(where=BlobClaim.user_id == user.id, order_by=BlobClaim.created)
     )
+    if len(blobs) == 0:
+        return h(
+            "article",
+            {},
+            h("p", {}, "You don't have any blobs yet. Create more by running"),
+            h(
+                "pre",
+                {},
+                h(
+                    "code",
+                    {},
+                    "pip install blobular",
+                    "blobular login",
+                    "blobular add my_file.txt",
+                ),
+            ),
+        )
+
     return h(
         "table",
         {},
