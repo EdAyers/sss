@@ -38,6 +38,31 @@ def is_json_key(key: Any) -> TypeGuard[JsonKey]:
     return isinstance(key, (str, int, float, bool, type(None)))
 
 
+def ofdict_dataclass(A: Type[T], a: JsonLike) -> T:
+    assert is_dataclass(A)
+    d2 = {}
+    for f in fields(A):
+        if not isinstance(a, dict):
+            raise TypeError(
+                f"Error while decoding dataclass {A}, expected a dict but got {a} : {type(a)}"
+            )
+        k = f.name
+        if k not in a:
+            if f.type is not None and is_optional(f.type):
+                v = None
+            else:
+                raise ValueError(
+                    f"Missing {f.name} on input dict. Decoding {a} to type {A}."
+                )
+        else:
+            v = a[k]
+        if f.type is not None:
+            d2[k] = ofdict(f.type, v)
+        else:
+            d2[k] = v
+    return A(**d2)
+
+
 @classdispatch
 def ofdict(A: Type[T], a: JsonLike) -> T:
     """Converts an ``a`` to an instance of ``A``, calling recursively if necessary.
@@ -51,6 +76,10 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
 
     [todo] I am hoping to retire this in favour of Pydantic.
     """
+    if isinstance(A, str):
+        raise TypeError(
+            f"Please make sure your class {A} is referred using types and not string-escaped types."
+        )
     if A is Any:
         return a  # type: ignore
     if A is type(None) and a is None:
@@ -79,35 +108,17 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         if result is not None:
             return result
     if is_dataclass(A):
-        d2 = {}
-        for f in fields(A):
-            if not isinstance(a, dict):
-                raise TypeError(
-                    f"Error while decoding dataclass {A}, expected a dict but got {a} : {type(a)}"
-                )
-            k = f.name
-            if k not in a:
-                if f.type is not None and is_optional(f.type):
-                    v = None
-                else:
-                    raise ValueError(
-                        f"Missing {f.name} on input dict. Decoding {a} to type {A}."
-                    )
-            else:
-                v = a[k]
-            if f.type is not None:
-                d2[k] = ofdict(f.type, v)
-            else:
-                d2[k] = v
-        return A(**d2)
+        return ofdict_dataclass(A, a)
     if A in [float, str, int, bytes]:  # [todo] etc
         if isinstance(a, A):
             return a
         else:
             raise TypeError(f"Expected an {A} but was {type(a)}")
-
-    if (not get_origin(A)) and isinstance(a, A):
-        return a
+    try:
+        if isinstance(a, A):
+            return a
+    except TypeError:
+        pass
     raise NotImplementedError(f"No implementation of ofdict for {A}.")
 
 
@@ -193,6 +204,19 @@ def validate(t: Type, item) -> bool:
     raise NotImplementedError(f"Don't know how to validate {t}")
 
 
+def todict_dataclass(x: Any):
+    assert is_dataclass(x)
+    r = {}
+    for field in fields(x):
+        k = field.name
+        v = getattr(x, k)
+        if is_optional(field.type) and v is None:
+            continue
+        # [todo] shouldn't this not be recursive?
+        r[k] = todict(v)
+    return r
+
+
 @singledispatch
 def todict(x: Any) -> JsonLike:
     """Converts the given object to a JSON-compatible object.
@@ -220,14 +244,7 @@ def todict(x: Any) -> JsonLike:
     if isinstance(x, (list, dict)):
         return x
     if is_dataclass(x):
-        r = {}
-        for field in fields(x):
-            k = field.name
-            v = getattr(x, k)
-            if is_optional(field.type) and v is None:
-                continue
-            r[k] = todict(v)
-        return r
+        return todict_dataclass(x)
     raise NotImplementedError(f"Don't know how to convert {type(x)}")
 
 
@@ -250,6 +267,7 @@ class MyJsonEncoder(json.JSONEncoder):
     """Converts Python objects to Json.
 
     We have additional support for dataclasses and enums that are not present in the standard encoder.
+    [todo] rename to TypedJsonEncoder?
     """
 
     def encode(self, obj):
@@ -330,6 +348,6 @@ try:
     def _ofdict_model(ModelCls: type[BaseModel], item):
         return ModelCls.parse_obj(item)
 
-    # [todo] pydantic validation types like EmailStr etc
+    # [todo] pydantic validation types like EmailStr, SecretStr etc
 except ImportError:
     pass
