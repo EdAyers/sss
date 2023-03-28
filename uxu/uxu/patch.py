@@ -94,8 +94,8 @@ class ReplaceElementPatch(Patch):
 
 @dataclass
 class ReplaceRootPatch(Patch):
-    items: list[Rendering]  # output of render
+    root : RootRendering
     kind: str = field(default="replace-root")
 
     def apply(self, root: RootRendering):
-        return replace(root, children=self.items)
+        return self.root

@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, is_dataclass, replace
-from typing import Any, Callable, Union
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
+from typing import Any, Callable, ClassVar, Union
 from textwrap import indent
 from html import escape
+
+from miniscutil.ofdict import ofdict, todict_dataclass, ofdict_dataclass
 
 """ A rendering is the thing that we actually send over the wire to Javascript. """
 
@@ -29,8 +31,9 @@ RenderedAttrVal = Union[EventHandler, str, dict]
 
 # [todo] abstract class
 class Rendering(ABC):
+    kind_map: ClassVar[dict[str, type["Rendering"]]] = {}
     id: str
-    kind: str
+    kind: ClassVar[str]
     key: Any
 
     @abstractmethod
@@ -75,6 +78,35 @@ class Rendering(ABC):
             return replace(self, children=cs)  # type: ignore
         raise LookupError()
 
+    # [todo] below code means we can ofdict an abstract class.
+    # I want to abstract this and put in miniscutil.
+    # ideally; we can also get this working with generics and protocols.
+
+    def __init_subclass__(cls, **kwargs):
+        kind = cls.kind
+        assert isinstance(kind, str)
+        cls.kind_map[kind] = cls
+        super().__init_subclass__(**kwargs)
+
+    @classmethod
+    def __ofdict__(cls, d):
+        assert isinstance(d, dict)
+        if "kind" not in d:
+            raise ValueError("missing kind key of dict")
+        k = d.pop("kind")
+        assert k in cls.kind_map, f"unrecognised kind {k} for {cls.__name__}"
+        T = cls.kind_map[k]
+        return ofdict_dataclass(T, d)
+
+    def __todict__(self):
+        assert is_dataclass(self)
+        d = todict_dataclass(self)
+        kind = getattr(type(self), "kind")
+        assert isinstance(kind, str)
+        assert kind in Rendering.kind_map
+        d["kind"] = kind
+        return d
+
 
 @dataclass
 class RootRendering(Rendering):
@@ -83,6 +115,7 @@ class RootRendering(Rendering):
     id: Any
     children: list[Rendering]
     key: Any = field(default=None)
+    kind: ClassVar[str] = "root"
 
     def static(self):
         raise RuntimeError("RootRendering can't be statically rendered")
@@ -92,7 +125,7 @@ class RootRendering(Rendering):
 class RenderedText(Rendering):
     value: str
     id: Any
-    kind: str = field(default="text")
+    kind: ClassVar[str] = "text"
 
     def static(self):
         return self.value
@@ -107,9 +140,9 @@ class RenderedElement(Rendering):
     id: Any
     tag: str
     attrs: dict[str, RenderedAttrVal]
-    children: list["Rendering"]
+    children: list[Rendering]
     key: Any = field(default=None)
-    kind: str = field(default="element")
+    kind: ClassVar[str] = "element"
 
     def static(self):
         from dominate.dom_tag import dom_tag
@@ -143,7 +176,7 @@ class RenderedFragment(Rendering):
     id: Any
     children: list["Rendering"]
     key: Any = field(default=None)
-    kind: str = field(default="fragment")
+    kind: ClassVar[str] = "fragment"
 
     def static(self):
         return [c.static() for c in self.children]
@@ -157,7 +190,7 @@ class RenderedWidget:
     id: Any
     name: str
     props: Any
-    kind: str = field(default="widget")
+    kind: ClassVar[str] = "widget"
 
 
 # [todo] put on Rendering methods

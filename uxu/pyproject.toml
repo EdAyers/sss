@@ -25,6 +25,14 @@ dependencies = [
   "miniscutil",
   "websockets",
   "html5lib",
+  "dominate",
+
+  # server
+  "pydantic",
+  "pydantic[dotenv]",
+  "python-jose", # for JWTs
+  "starlette",
+
 ]
 dynamic = ["version"]
 

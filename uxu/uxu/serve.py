@@ -1,115 +1,44 @@
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from secrets import token_urlsafe
-from typing import Any, Callable, Optional
-from uuid import UUID
-from fastapi import Request, WebSocket, APIRouter
-from fastapi.staticfiles import StaticFiles
+from typing import Any, Callable, Optional, Protocol
+from uuid import UUID, uuid4
+import logging
+
 from pydantic import BaseModel, BaseSettings, Field, SecretStr
-from uxu.manager import EventArgs, Manager
-from uxu.rpc import WebsocketTransport, RpcServer, InitializationMode, Transport
-from uxu.__about__ import __version__
-from uxu.rpc.jsonrpc import invalid_params, rpc_method
-from uxu.html import h
-import starlette.routing
-from starlette.responses import HTMLResponse
 import dominate
 import dominate.tags as t
 from jose import ExpiredSignatureError, JWTError, jwt
-import logging
+
+from starlette.responses import HTMLResponse
+from starlette.requests import Request
+from starlette.routing import Route, Mount, WebSocketRoute
+from starlette.applications import Starlette
+from starlette.staticfiles import StaticFiles
+from starlette.websockets import WebSocket
+
+from uxu.manager import EventArgs, Manager, render_static
+from uxu.persistence import PersistDict
+from uxu.rpc import (
+    StarletteWebsocketTransport,
+    RpcServer,
+    InitializationMode,
+    Transport,
+)
+from uxu.__about__ import __version__
+from uxu.rpc.jsonrpc import invalid_params, rpc_method
+from uxu.html import h
+from uxu.rendering import RootRendering
 
 # https://fastapi.tiangolo.com/advanced/websockets/?h=websocket
 
 logger = logging.getLogger("uxu")
 
 
-def uxu_root(request: Request, component, props):
-    cfg = Settings()  # type: ignore
-    expires_delta = cfg.jwt_expires
-    expire = datetime.utcnow() + expires_delta
-    # [todo] get subject as id of authenticated user.
-    claims = TicketClaims(
-        exp=expire,
-        iat=datetime.utcnow(),
-        jti=token_urlsafe(16),
-        aud=request.url_for("uxu_socket"),
-        iss=str(request.url.path),
-        # [todo] how to identify the client? needs to defend csrf and xss
-        # one option is simply that they have to log in first, then pass user_id
-        sub=None,
-    )
-    ticket = jwt.encode(
-        claims=claims.dict(),
-        key=cfg.jwt_secret.get_secret_value(),
-        algorithm=cfg.jwt_algorithm,
-    )
-    document: Any = dominate.document(title=f"Uxu {__version__}")
-    with document.head:
-        t.link(
-            rel="stylesheet",
-            href="https://unpkg.com/tachyons@4.12.0/css/tachyons.min.css",
-        )
-    with document.body:
-        t.main("welcome to uxu...", id="uxu_root")
-        t.script(
-            f"UXU_TICKET = '{ticket}'; UXU_URL = '{request.url_for('uxu_socket')}';",
-            type="text/javascript",
-        )
-        t.script(
-            type="text/javascript", src=request.url_for("static", filename="uxu.js")
-        )
-
-    content = document.render()
-    return HTMLResponse(content=content)
-
-
-class UxuRouter:
-    def __init__(self):
-        self.routes = []
-
-    def add_route(self, path: str, component: Callable):
-        def endpoint(request):
-            path_params = request.path_params
-            # [todo] use fastapi signature introspection stuff.
-            spec = h(component, **path_params)
-            with Manager(spec) as mgr:
-                rs = mgr.render()
-            doc = dominate.document(title=f"Uxu {__version__}")
-            for r in rs:
-                doc.add(r.static())
-            content = doc.render()
-            response = HTMLResponse(content=content)
-            # [todo] here, start a background task which is a websocket listener
-            # the tough part is I need to make sure the handler for the websocket
-            # connection has access to this context and everything is threadsafe
-            ...
-
-        r = starlette.routing.Route(path, endpoint=endpoint)
-        self.routes.append(r)
-
-    def get(self, path: str):
-        def decorator(func):
-            self.add_route(path, func)
-            return func
-
-        return decorator
-
-
-ur = UxuRouter()
-
-""" wrap components and props.
-Return a generic html response with a ticket containing the props.
-
-The problem is that this is dangerous because it means that the props are readable by the client.
-Could easily end up leaking internal state.
-
-What I really really want to do is share the manager object for the lifetime of the initial request and
-websocket request.
-"""
-
-
-@ur.get("/{text:str}")
-def read_root(text: str):
+def HelloWorld(text: str):
+    """Just a simple component to test things."""
     return h(
         "main",
         {},
@@ -120,7 +49,116 @@ def read_root(text: str):
     )
 
 
-router = APIRouter()
+def component_of_name(name: str):
+    return HelloWorld
+
+
+@dataclass
+class UxuSessionParams:
+    id: str  # session id
+    component_name: str
+    path: str
+    rendering: RootRendering
+    params: dict[str, str] = field(default_factory=dict)
+
+
+class UxuApplication:
+    """
+    I'm not completely sure how this should work yet, but the idea is that
+    UxuApplication is a valid ASGI app that you can dump into Starlette or FastAPI or whatever.
+
+    For now, I'm just doing dependency injection but I want to do this properly.
+
+    """
+
+    def __init__(self):
+        self.cfg = Settings()  # type: ignore
+        self.persistence = PersistDict(
+            self.cfg.persistent_dict_path, T=UxuSessionParams
+        )
+        self.webapp = Starlette(
+            debug=True,
+            routes=[
+                Mount(
+                    "/static",
+                    app=StaticFiles(packages=[("uxu", "static")]),
+                    name="static",
+                ),
+                # https://www.starlette.io/routing#websocket-routing
+                WebSocketRoute("/ws", endpoint=self.handle_websocket),
+                Route("/{name:str}", self.handle),
+            ],
+        )
+
+    async def __call__(self, scope, receive, send):
+        return await self.webapp(scope, receive, send)
+
+    async def handle(self, request: Request):
+        cfg = self.cfg
+        expires_delta = cfg.jwt_expires
+        expire = datetime.utcnow() + expires_delta
+        # [todo] request.url.path will contain the component name
+        # [todo] get subject as id of authenticated user.
+        socket_url = request.url_for("handle_websocket")
+        static_url = request.url_for("static", path="uxu.js")
+        session_id = uuid4().hex
+        claims = TicketClaims(
+            exp=expire,
+            iat=datetime.utcnow(),
+            jti=session_id,
+            aud=str(socket_url),
+            iss=str(request.url.path),
+            # [todo] how to identify the client? needs to defend csrf and xss
+            # one option is simply that they have to log in first, then pass user_id
+            sub=None,
+        )
+        ticket = jwt.encode(
+            claims=claims.dict(exclude_none=True),
+            key=cfg.jwt_secret.get_secret_value(),
+            algorithm=cfg.jwt_algorithm,
+        )
+
+        # [todo] implement uxu routing table.
+        component = component_of_name(request.url.path)
+        initial_html = component(request.url.path)
+        rendering = render_static(initial_html)
+
+        session_params = UxuSessionParams(
+            id=session_id,
+            component_name=component.__qualname__,
+            path=request.url.path,
+            params={},  # [todo]
+            rendering=rendering,
+        )
+        self.persistence.set(session_id, session_params)  # [todo] make async
+        # [todo] remove dep on dominate
+        document: Any = dominate.document(title=f"Uxu {__version__}")
+        with document.head:
+            t.link(
+                rel="stylesheet",
+                href="https://unpkg.com/tachyons@4.12.0/css/tachyons.min.css",
+            )
+        with document.body:
+            t.main("welcome to uxu...", id="uxu_root")
+            # [todo] is this the best way to inject a secret?
+            # try switching to using a cookie that the JS can't see.
+            t.script(
+                f"UXU_TICKET = '{ticket}'; UXU_URL = '{socket_url}';",
+                type="text/javascript",
+            )
+            t.script(type="text/javascript", src=static_url)
+
+        content = document.render()
+        return HTMLResponse(content=content)
+
+    async def handle_websocket(self, websocket: WebSocket):
+        await websocket.accept()
+        transport = StarletteWebsocketTransport(websocket)
+        with UxuSession(
+            transport, self.persistence, socket_url=str(websocket.url)
+        ) as server:
+            await server.serve_forever()
+        await websocket.close()
 
 
 class TicketClaims(BaseModel):
@@ -137,26 +175,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256")
     jwt_secret: SecretStr
 
+    persistent_dict_path: Path = Field(default=Path("tmp/uxu_server.sqlite"))
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-
-
-router.mount("/static", StaticFiles(packages=["uxu.static"]), name="uxu scripts")
-
-
-@router.websocket("/uxu")
-async def uxu_socket(websocket: WebSocket):
-    await websocket.accept()
-    transport = WebsocketTransport(websocket)
-    with UxuSession(transport) as server:
-        await server.serve_forever()
-
-
-def DummyComponent(path):
-    return h(
-        "div", {}, [h("h1", {}, "Hello World"), h("p", {}, ["The url was: ", path])]
-    )
 
 
 class PeerInfo(BaseModel):
@@ -168,7 +191,7 @@ class UxuInitParams(BaseModel):
     clientInfo: PeerInfo
     url: str
     ticket: str
-    # some kind of DOM checksum
+    # [todo] some kind of DOM checksum
 
 
 class UxuInitResponse(BaseModel):
@@ -176,9 +199,18 @@ class UxuInitResponse(BaseModel):
 
 
 class UxuSession(RpcServer):
-    def __init__(self, transport: Transport):
+    """Handles a websocket session."""
+
+    def __init__(
+        self,
+        transport: Transport,
+        persistence: PersistDict[UxuSessionParams],
+        socket_url: str,
+    ):
         super().__init__(transport, init_mode=InitializationMode.ExpectInit)
-        self.manager = Manager()
+        self.persistence = persistence
+        self.socket_url = socket_url
+        self.manager = Manager(is_static=False)
 
     @rpc_method("initialize")
     async def on_initialize(self, params: UxuInitParams):
@@ -189,22 +221,31 @@ class UxuSession(RpcServer):
             params.ticket,
             key=cfg.jwt_secret.get_secret_value(),
             algorithms=[cfg.jwt_algorithm],
+            audience=self.socket_url,
         )
         claims = TicketClaims.parse_obj(claims)
+        session_params: UxuSessionParams = self.persistence.pop(
+            claims.jti
+        )  # [todo] make async
+        component = component_of_name(session_params.component_name)
+        spec = component(session_params.path)
+
         # [todo] validate audience
         # [todo] validate jti to ensure no replays
-        # [todo] url should be validated? ticket should be per-route
-
+        # [todo] url should be validated. ticket should be per-route
         # [todo] we should route to different things.
-        spec = h(DummyComponent, path=params.url)
 
-        self.manager.initialize(spec)
-
+        self.manager.hydrate(session_params.rendering, spec)
         self.patch_task = asyncio.create_task(self.patcher_loop())
 
         return UxuInitResponse(
             serverInfo=PeerInfo(name="uxu-server", version=__version__)
         )
+
+    @rpc_method("initialized")
+    def on_initialized(self, params):
+        logger.debug("client successfully initialized")
+        return
 
     @rpc_method("render")
     def on_render(self, params):
@@ -236,5 +277,16 @@ class UxuSession(RpcServer):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.patch_task.cancel()
+        if hasattr(self, "patch_task"):
+            self.patch_task.cancel()
         self.manager.dispose()
+
+
+app = UxuApplication()
+
+from rich.logging import RichHandler
+
+FORMAT = "%(message)s"
+logging.basicConfig(
+    level="NOTSET", format=FORMAT, datefmt="[%X]", handlers=[RichHandler()]
+)

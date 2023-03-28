@@ -30,6 +30,12 @@ interface RenderedFragment {
     id: string
     children: Rendering[]
 }
+interface RootRendering {
+    id: string
+    kind: 'root'
+    children: Rendering[]
+    key?: string
+}
 
 const WIDGETS = new Map<string, WidgetSpec<any>>()
 
@@ -69,7 +75,7 @@ interface ReplaceElementPatch {
 
 interface ReplaceRootPatch {
     kind: 'replace-root'
-    items: Rendering[];
+    root: RootRendering
 }
 
 interface InvalidatePatch {
@@ -106,14 +112,16 @@ type Vdom = VdomNode | VdomWidget;
 class DomManager {
     nodes: Map<string, Vdom> = new Map();
     parents: Map<string, string> = new Map();
+    mountPoint: Element;
     root: VdomNode
     onEvent: any
-    constructor(root: Element, onEvent: any, initial?: Rendering[]) {
+    constructor(mountPoint: Element, onEvent: any, initial?: RootRendering) {
+        this.mountPoint = mountPoint;
         this.onEvent = onEvent;
         this.root = {
             kind: 'element',
             id: 'root',
-            node: root,
+            node: mountPoint,
             handlers: new Map(),
             child_ids: [],
         }
@@ -245,7 +253,7 @@ class DomManager {
 
     remove(id: string) {
         const vn = this.nodes.get(id);
-        if (!vn) { return; }
+        if (!vn) { return undefined; }
         if (vn.kind === "element") {
             for (const key in vn.handlers) {
                 this.rmAttr(vn, key)
@@ -259,11 +267,18 @@ class DomManager {
         return vn
     }
 
-    replaceRoot(items: Rendering[]): void {
-        const rv = this.remove(this.root.id)!
-        const node: Element = rv.node as any
-        const cs = items.map(x => this.create(x, this.root.id));
-        node.replaceChildren(...cs.map(x => x.node))
+    replaceRoot(root: RootRendering): void {
+        this.remove(this.root.id)!
+        this.root = {
+            kind: 'element',
+            id: root.id,
+            node: this.mountPoint,
+            handlers: new Map(),
+            child_ids: [],
+        }
+        this.setVdom(this.root)
+        const cs = root.children.map(x => this.create(x, this.root.id));
+        this.mountPoint.replaceChildren(...cs.map(x => x.node));
         this.root.child_ids = cs.map(x => x.id);
         this.setVdom(this.root)
     }
@@ -346,7 +361,7 @@ class DomManager {
                     this.modifyChildren(patch)
                     break;
                 case 'replace-root':
-                    this.replaceRoot(patch.items)
+                    this.replaceRoot(patch.root)
                     break;
                 case 'replace-element':
                     this.replaceElement(patch)
@@ -387,7 +402,7 @@ export class ReactorApp {
 
     async rerender() {
         console.log('rerender')
-        const r: Rendering[] = await this.rpc.request('render', {})
+        const r: RootRendering = await this.rpc.request('render', {})
         this.mgr.replaceRoot(r)
     }
 

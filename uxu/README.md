@@ -16,3 +16,16 @@ pip install uxu
 ## License
 
 `uxu` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
+
+## Development
+
+To develop the javascript portion of the library, please do
+
+```sh
+cd web
+# to build
+node build.mjs
+
+# to build and watch and live-reload
+node server.mjs
+```

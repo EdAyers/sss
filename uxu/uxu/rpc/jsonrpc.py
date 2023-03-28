@@ -94,8 +94,12 @@ def invalid_request(message: str) -> ResponseError:
     return ResponseError(ErrorCode.invalid_request, message)
 
 
-def method_not_found(message: str) -> ResponseError:
-    return ResponseError(ErrorCode.method_not_found, message)
+def method_not_found(method_name: str) -> ResponseError:
+    return ResponseError(
+        ErrorCode.method_not_found,
+        f"no method found for {method_name}",
+        data=method_name,
+    )
 
 
 def invalid_params(message: str = "invalid params") -> ResponseError:
@@ -117,7 +121,7 @@ class Response:
     https://www.jsonrpc.org/specification#response_object
     """
 
-    id: Any = field(default=None)
+    id: Optional[Union[str, int]] = field(default=None)
     result: Optional[Any] = field(default=None)
     error: Optional[ResponseError] = field(default=None)
     jsonrpc: str = field(default="2.0")
@@ -129,8 +133,8 @@ class Response:
 class Dispatcher:
     """Dispatcher for JSON-RPC requests."""
 
-    def __init__(self, methods={}, extra_kwargs={}):
-        self.methods = methods
+    def __init__(self, methods=None, extra_kwargs={}):
+        self.methods = methods or {}
         self.extra_kwargs = extra_kwargs
 
     def __contains__(self, method):
@@ -267,7 +271,7 @@ class RpcServer:
     def __init__(
         self,
         transport: Transport,
-        dispatcher=Dispatcher(),
+        dispatcher=None,
         name=None,
         init_mode: InitializationMode = InitializationMode.NoInit,
     ):
@@ -283,7 +287,7 @@ class RpcServer:
         else:
             self.status = RpcServerStatus.preinit
         self.transport = transport
-        self.dispatcher = dispatcher
+        self.dispatcher = dispatcher or Dispatcher()
         self.my_requests = {}
         self.their_requests = {}
         self.request_counter = 1000
@@ -294,7 +298,7 @@ class RpcServer:
             if rpc_method is not None:
                 # [todo] assert that the signature is correct
                 logger.debug(
-                    f"registering RPC method {rpc_method} to {method.__qualname__}"
+                    f"registering RPC method '{rpc_method}' to {method.__qualname__}"
                 )
                 self.dispatcher.register(rpc_method)(method)
 
@@ -359,40 +363,39 @@ class RpcServer:
             task = asyncio.create_task(self._send_init(init_param))
             self.notification_tasks.add(task)
             task.add_done_callback(self.notification_tasks.discard)
-
-        while True:
-            try:
-                data = await self.transport.recv()
-                messages = json.loads(data)
-                # res can be a batch
-                if isinstance(messages, dict):
-                    messages = [messages]
-                elif not isinstance(messages, list):
-                    raise TypeError(f"expected list or dict, got {type(messages)}")
-                for message in messages:
-                    self._handle_message(message)
-            except TransportClosedOK as e:
-                logger.info(f"{self.name} transport closed gracefully: {e}")
-                return
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.exception("invalid json")
-                response = Response(
-                    error=ResponseError(message=str(e), code=ErrorCode.parse_error)
-                )
-                await self.send(response)
-                continue
-            except ExitNotification as e:
-                logger.info(f"{self.name} received exit notification, terminating")
-                return
-            except TransportClosedError as e:
-                raise e
-            except Exception as e:
-                raise e
-            finally:
-                e = sys.exception() or ConnectionError(f"{self} shutdown")
-                for fut in self.my_requests.values():
-                    fut.set_exception(e)
-                self._shutdown()
+        try:
+            while True:
+                try:
+                    data = await self.transport.recv()
+                    messages = json.loads(data)
+                    # res can be a batch
+                    if isinstance(messages, dict):
+                        messages = [messages]
+                    elif not isinstance(messages, list):
+                        raise TypeError(f"expected list or dict, got {type(messages)}")
+                    for message in messages:
+                        self._handle_message(message)
+                except TransportClosedOK as e:
+                    logger.info(f"{self.name} transport closed gracefully: {e}")
+                    return
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.exception("invalid json")
+                    response = Response(
+                        error=ResponseError(message=str(e), code=ErrorCode.parse_error)
+                    )
+                    await self.send(response)
+                    continue
+                except ExitNotification as e:
+                    logger.info(f"{self.name} received exit notification, terminating")
+                    return
+        finally:
+            logger.info(f"exiting serve_forever loop")
+            (_, e, _) = sys.exc_info()  # sys.exception() is 3.11 only
+            if e is None:
+                e = ConnectionError(f"{self} shutdown")
+            for fut in self.my_requests.values():
+                fut.set_exception(e)
+            self._shutdown()
 
     def _shutdown(self):
         for t in self.their_requests.values():
@@ -466,7 +469,7 @@ class RpcServer:
 
     async def _on_request_core(self, req: Request):
         if self.status == RpcServerStatus.preinit:
-            INIT_METHOD = "inititialize"
+            INIT_METHOD = "initialize"
             if self.init_mode == InitializationMode.ExpectInit:
                 if req.method == INIT_METHOD:
                     self.status = RpcServerStatus.running

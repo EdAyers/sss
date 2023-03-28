@@ -108,7 +108,8 @@ class Manager:
 
     def dispose(self):
         if not self.is_initialized:
-            raise RuntimeError("Manager is not initialized")
+            logger.debug("Manager disposed twice or before initialization")
+            return
         for t in self.event_tasks:
             t.cancel()
         with set_vdom_context(self):
@@ -170,6 +171,6 @@ class Manager:
 
 
 def render_static(html: Html) -> RootRendering:
-    m = Manager(spec=html, is_static=True)
-    r = m.render()
-    return r
+    with Manager(spec=html, is_static=True) as m:
+        r = m.render()
+        return r

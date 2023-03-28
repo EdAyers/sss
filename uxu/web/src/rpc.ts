@@ -139,7 +139,7 @@ export class JsonRpc {
         }
       }
     } else if (isResponse(msg) || isError(msg)) {
-      if (!msg.id) {
+      if (msg.id === undefined) {
         if (isError(msg)) {
           console.error(msg.error.code, msg.error.message);
         } else {
