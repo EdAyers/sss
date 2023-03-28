@@ -118,7 +118,7 @@ class RootRendering(Rendering):
     kind: ClassVar[str] = "root"
 
     def static(self):
-        raise RuntimeError("RootRendering can't be statically rendered")
+        return [x.static() for x in self.children]
 
 
 @dataclass

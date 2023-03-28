@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Any, NewType, Optional
 from uuid import UUID
-import aiohttp
 from blobular.api.github_login import login_handler
 from fastapi import APIRouter, Depends
 from miniscutil.misc import append_url_params
@@ -23,9 +22,14 @@ logger = logging.getLogger("blobular")
 
 
 class AuthenticationError(Exception):
-    """Error caused by the user not being authenticated.
+    """Error caused by the user not being authorized.
 
-    That is, the user is not logged in or didn't present a valid API key."""
+    That is, the user didn't present a valid JWT or API key.
+    This should result in a 401 Unauthorized response.
+
+    [todo] rename to AuthorizationError.
+    I think technically authentication is the login step where we get their id from github.
+    """
 
     pass
 
@@ -124,6 +128,14 @@ def get_user(request: Request, db: Db = Depends(database)) -> User:
     return user
 
 
+def try_get_user(request: Request, db: Db = Depends(database)) -> Optional[User]:
+    """Same as get_user but just returns None if not found."""
+    try:
+        return get_user(request, db)
+    except AuthenticationError:
+        return None
+
+
 router = APIRouter(prefix="/auth")
 
 
@@ -156,7 +168,7 @@ async def login(
     cfg = Settings.current()
     assert db.engine == engine_context.get()
     jwt = await login_handler(code, db)
-    max_age = cfg.jwt_expires.seconds
+    max_age = cfg.jwt_expires.total_seconds()
     domain = cfg.cloud_url
 
     headers = {
@@ -168,10 +180,12 @@ async def login(
     }
     if client_loopback is not None:
         # [todo] client_loopback should be localhost.
+        assert client_loopback.startswith("http://127.0.0.1")
         url = append_url_params(client_loopback, jwt=jwt)
         return RedirectResponse(url, headers=headers)
     else:
-        # this case is when they login from a browser.
+        # just default to returning the JWT
+        # Note that browsers should be using /login instead of /api/github/login
         return PlainTextResponse(jwt, headers=headers)
 
 

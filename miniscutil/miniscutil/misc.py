@@ -93,7 +93,7 @@ def partition(
     return filterfalse(pred, t1), filter(pred, t2)
 
 
-def append_url_params(url: str, **params):
+def append_url_params(url: str, **params) -> str:
     """Add the given query params dictionary to the given url."""
     from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
@@ -102,4 +102,6 @@ def append_url_params(url: str, **params):
     query = dict(parse_qsl(parts.query))
     query.update(params)
     parts = parts._replace(query=urlencode(query))
-    return urlunparse(parts)
+    result = urlunparse(parts)
+    assert isinstance(result, str)
+    return result

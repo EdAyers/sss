@@ -30,7 +30,7 @@ class Settings(BaseSettings, Current):
     aws_secret_access_key: SecretStr
 
     cloud_url: str
-    """ The URL of the API. """
+    """ The URL of the API. (no path allowed) """
 
     class Config:
         env_file = ".env"

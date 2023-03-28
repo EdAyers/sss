@@ -29,3 +29,13 @@ node build.mjs
 # to build and watch and live-reload
 node server.mjs
 ```
+
+## Todos
+
+- server: only connect websocket if interactivity is needed
+- server: have checksum on patches to make sure state doesn't get messed up.
+- server: timeouts on websocket connections
+- server: auth
+- server: live reloading
+- components: implement forms
+- components: spinners while waiting for patcher roundtrips
