@@ -11,6 +11,7 @@ import logging
 from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse, PlainTextResponse, RedirectResponse
+from miniscutil.misc import append_url_params
 from pydantic import BaseModel, SecretStr
 from starlette.requests import Request
 from starlette.datastructures import URL
@@ -109,6 +110,7 @@ async def web_login(
         return RedirectResponse(path, headers=headers)
     elif redirect_domain.startswith("127.0.0.1"):
         # local redirect for client loopback
+        redirect_uri = append_url_params(redirect_uri, jwt=jwt)
         headers.update(
             {
                 "Access-Control-Allow-Origin": "http://127.0.0.1",
