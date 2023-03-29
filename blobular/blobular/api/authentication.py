@@ -145,49 +145,6 @@ def get_github_client_id():
     return PlainTextResponse(Settings.current().github_client_id)
 
 
-@router.get("/github/login")
-async def login(
-    request: Request,
-    code: str,
-    state: str | None = None,
-    client_loopback: Optional[str] = None,
-    db=Depends(database),
-):
-    """Login to the server. The code param should be a github authentication code.
-
-
-    Args:
-        code: GitHub authentication code.
-        state: GitHub authentication state (optional).
-        client_loopback: This means that the login was initiated by a Python client and gives the address to loop back to.
-    Todo:
-        * Make this work with general OAuth2
-
-    """
-    cfg = Settings.current()
-    assert db.engine == engine_context.get()
-    jwt = await login_handler(code, db)
-    max_age = cfg.jwt_expires.total_seconds()
-    domain = cfg.cloud_url
-
-    headers = {
-        "Set-Cookie": f"jwt={jwt}; HttpOnly; Max-Age={max_age}; domain={domain}",
-        # [todo] are these CORS headers needed?
-        "Access-Control-Allow-Origin": "http://127.0.0.1",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept",
-    }
-    if client_loopback is not None:
-        # [todo] client_loopback should be localhost.
-        assert client_loopback.startswith("http://127.0.0.1")
-        url = append_url_params(client_loopback, jwt=jwt)
-        return RedirectResponse(url, headers=headers)
-    else:
-        # just default to returning the JWT
-        # Note that browsers should be using /login instead of /api/github/login
-        return PlainTextResponse(jwt, headers=headers)
-
-
 @router.post("/api_key/generate")
 def generate_api_key(request: Request, db=Depends(database)):
     token = from_request(request)
