@@ -178,9 +178,8 @@ def open(digest: str, path: Optional[Path] = None):
 
 
 def print_user_status():
-    r = request("GET", "/user")
+    r = request("GET", "/user", no_auth_ok=True)
     if r.status_code == 401:
-        print("401")
         return
     r.raise_for_status()
     r = r.json()

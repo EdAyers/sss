@@ -77,8 +77,55 @@ def _any_err(request, exc: Exception):
     return PlainTextResponse("internal blobular error", status_code=500)
 
 
-# Run me:
+@app.get("/login")
+async def web_login(
+    request: Request,
+    code: str,
+    redirect_uri: Optional[str] = None,
+    state: Optional[str] = None,
+    db=Depends(database),
+):
+    """Login handler for github.
+
+    To use, send a request to https://github.com/login/oauth/authorize
+    with client_id, redirect_uri and scope set correctly.
+
+    """
+    cfg = Settings.current()
+    jwt = await login_handler(code, db)
+    max_age = int(cfg.jwt_expires.total_seconds())
+    domain = urlparse(cfg.cloud_url).netloc
+    headers = {"Set-Cookie": f"jwt={jwt}; HttpOnly; Max-Age={max_age}; domain={domain}"}
+
+    if redirect_uri is None:
+        # [todo] allow redirects to other routes in our domain
+        # remember: never allow arbitrary redirects to other domains
+        # for now just always redirect to index.
+        return RedirectResponse("/", headers=headers)
+
+    redirect_domain = urlparse(redirect_uri).netloc
+    if redirect_domain == domain:
+        path = urlparse(redirect_uri).path
+        return RedirectResponse(path, headers=headers)
+    elif redirect_domain.startswith("127.0.0.1"):
+        # local redirect for client loopback
+        headers.update(
+            {
+                "Access-Control-Allow-Origin": "http://127.0.0.1",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Origin, X-Requested-With, Content-Type, Accept",
+            }
+        )
+        return RedirectResponse(redirect_uri, headers=headers)
+    else:
+        raise HTTPException(400, "invalid redirect_uri")
+
+
+# run in dev:
 # uvicorn blobular.api.app:app --reload
+
+# run in prod:
+# gunicorn -c gunicorn_conf.py blobular.api.app:app
 
 if __name__ == "__main__":
     import uvicorn

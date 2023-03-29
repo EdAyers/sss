@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from miniscutil.misc import append_url_params, human_size
 from uxu import h, Manager, render_static
 import dominate
@@ -35,21 +35,6 @@ def get_sign_in_url():
     }
     uri = append_url_params(base, **params)
     return uri
-
-
-@router.get("/login")
-async def web_login(
-    request: Request, code: str, state: Optional[str] = None, db=Depends(database)
-):
-    cfg = Settings.current()
-    jwt = await login_handler(code, db)
-    max_age = int(cfg.jwt_expires.total_seconds())
-    domain = urlparse(cfg.cloud_url).netloc
-    headers = {"Set-Cookie": f"jwt={jwt}; HttpOnly; Max-Age={max_age}; domain={domain}"}
-    # [todo] allow redirects to other routes in our domain
-    # remember: never allow arbitrary redirects to other domains
-    # for now just always redirect to index.
-    return RedirectResponse("/", headers=headers, status_code=302)
 
 
 def layout(content, user: Optional[User] = Depends(try_get_user)):
@@ -122,9 +107,9 @@ def make_the_table(db: Db, user: User):
                 h(
                     "code",
                     {},
-                    "pip install blobular",
-                    "blobular login",
-                    "blobular add my_file.txt",
+                    "pip install blobular\n",
+                    "blobular login\n",
+                    "blobular add my_file.txt\n",
                 ),
             ),
         )
@@ -189,7 +174,7 @@ async def read_root(user: User = Depends(try_get_user), db: Db = Depends(databas
             href=f"https://cdn.jsdelivr.net/gh/aymanbagabas/iosevka-fonts@v11.1.1/dist/iosevka-slab/iosevka-slab.min.css",
         )
         t.style(
-            "body { font-family: Iosevka Slab Web, monospace;}",
+            "body, code { font-family: Iosevka Slab Web, monospace;}",
             "th { text-align: left; }",
             "th, td { padding-right: 1rem; }",
         )
