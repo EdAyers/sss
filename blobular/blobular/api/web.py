@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from miniscutil.misc import append_url_params, human_size
@@ -43,7 +44,7 @@ async def web_login(
     cfg = Settings.current()
     jwt = await login_handler(code, db)
     max_age = int(cfg.jwt_expires.total_seconds())
-    domain = "127.0.0.1"  # cfg.cloud_url
+    domain = urlparse(cfg.cloud_url).netloc
     headers = {"Set-Cookie": f"jwt={jwt}; HttpOnly; Max-Age={max_age}; domain={domain}"}
     # [todo] allow redirects to other routes in our domain
     # remember: never allow arbitrary redirects to other domains
