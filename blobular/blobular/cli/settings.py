@@ -16,7 +16,7 @@ class Settings(BaseSettings, Current):
 
     cloud_url: str = Field(default="https://blobular.edayers.com")
 
-    web_url: str = Field(default="hitsave.io")
+    web_url: str = Field(default="blobular.edayers.com")
     """ URL for the website. """
 
     local_cache_dir: Path = Field(default_factory=lambda: get_app_cache_dir(APP_NAME))

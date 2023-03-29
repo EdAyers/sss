@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Dict, Optional
 import webbrowser
 from aiohttp import web
@@ -37,8 +38,12 @@ async def loopback_login(*, autoopen=False) -> str:
 
     if not is_interactive_terminal():
         raise RuntimeError(
-            "Can't authenticate the user in a non-interactive terminal session."
+            "can't authenticate the user in a non-interactive terminal session"
         )
+    if os.environ.get("SSH_CONNECTION", None) is not None:
+        # we are running in an SSH connection, so loopback login won't work because
+        # the browser likely won't open and the port
+        raise RuntimeError("SSH session detected: loopback login won't work. Please use an API key instead.")
     cfg = Settings.current()
     github_client_id = await get_github_client_id()
     # [todo] if there is already a valid jwt, don't bother logging in here.
@@ -48,7 +53,7 @@ async def loopback_login(*, autoopen=False) -> str:
     query_params = {
         "client_id": github_client_id,  # Production GitHub OAuth app client id
         "scope": "user:email",
-        "redirect_uri": f"{cfg.cloud_url}/api/auth/github/login?client_loopback={miniserver_url}",
+        "redirect_uri": f"{cfg.cloud_url}/login?redirect_uri={miniserver_url}",
     }
     query_params = urllib.parse.urlencode(query_params)
     base_url = "https://github.com/login/oauth/authorize"

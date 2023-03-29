@@ -62,7 +62,6 @@ def from_jwt(encoded_jwt: str) -> JwtClaims:
         # [todo] if user-agent is a terminal then suggest the shell command to use.
         raise AuthenticationError("expired JWT, please log in again") from e
     except JWTError as e:
-        logger.exception(e)
         raise AuthenticationError("invalid JWT") from e
 
 
