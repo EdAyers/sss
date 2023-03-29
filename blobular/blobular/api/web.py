@@ -75,7 +75,7 @@ def layout(content, user: Optional[User] = Depends(try_get_user)):
                     h(
                         "a",
                         {
-                            "href": "https://github.com/sss/blobular"
+                            "href": "https://github.com/EdAyers/sss/tree/main/blobular"
                         },  # [todo] get these from pyproject.toml
                         "GitHub Repository",
                     ),

@@ -78,9 +78,8 @@ async def put_blob(
 
     # [todo] perform in single query
     with transaction(db.engine):
-        where = (BlobClaim.user_id == user.id) & (BlobClaim.digest == info.digest)
+        where = (BlobClaim.user_id == user.id) & (BlobClaim.digest == actual_digest)
         b = db.blobs.select_one(where=where)
-        assert b is None or b.content_length == info.content_length
         if b is None:
             db.blobs.insert_one(
                 BlobClaim(
@@ -91,6 +90,7 @@ async def put_blob(
                 )
             )
         else:
+            assert b.content_length == info.content_length
             if is_public and not b.is_public:
                 db.blobs.update(
                     where=where,
@@ -99,6 +99,7 @@ async def put_blob(
             if b.is_public:
                 is_public = True
     return {
+        "created": b is None,
         "digest": info.digest,
         "content_length": info.content_length,
         "is_public": is_public,
@@ -116,6 +117,17 @@ def get_claim(digest: str, user: User, db: Db = Depends(database)):
         )
     assert claim.digest == digest, "oops"
     return claim
+
+
+def touch(digest: str, user: User, db: Db):
+    db.blobs.update(
+        {
+            BlobClaim.last_accessed: datetime.utcnow(),
+            BlobClaim.accesses: BlobClaim.accesses + 1,
+        },
+        where=(BlobClaim.digest == digest)
+        & ((BlobClaim.user_id == user.id) | (BlobClaim.is_public == True)),
+    )
 
 
 @router.get("/blob/{digest}/info")
@@ -137,6 +149,7 @@ async def get_blob(digest: str, user: User = Depends(get_user), db=Depends(datab
     """Stream the blob."""
     # [todo] feat: request ranges of blob.
     claim = get_claim(digest, user, db)
+    touch(digest, user, db)
     assert claim.digest == digest
 
     def iterfile():
