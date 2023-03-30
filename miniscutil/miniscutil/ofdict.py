@@ -1,3 +1,4 @@
+from collections import ChainMap
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
@@ -6,6 +7,7 @@ import json
 from pathlib import Path
 from typing import (
     Any,
+    ClassVar,
     Dict,
     List,
     Literal,
@@ -60,7 +62,7 @@ def ofdict_dataclass(A: Type[T], a: JsonLike) -> T:
             d2[k] = ofdict(f.type, v)
         else:
             d2[k] = v
-    return A(**d2)
+    return A(**d2)  # type: ignore
 
 
 @classdispatch
@@ -78,8 +80,23 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
     """
     if isinstance(A, str):
         raise TypeError(
-            f"Please make sure your class {A} is referred using types and not string-escaped types."
+            f"please make sure your class {A} is referred using types and not string-escaped types"
         )
+    if issubclass(A, OfDictUnion):
+        class_key = getattr(A, "_class_key", "__class__")
+        ct = getattr(A, "_class_table", None)
+        if ct is None:
+            raise TypeError(f"failed to find class table for {A}")
+        assert isinstance(a, dict)
+        C = a.get(class_key, None)
+        if C is None:
+            raise TypeError(
+                f"ofdict for a subclass of 'OfDictUnion' must include a '{class_key}' key."
+            )
+        if not issubclass(C, A):
+            raise TypeError(f"Expected {C} to be a subclass of {A}")
+        A = C
+
     if A is Any:
         return a  # type: ignore
     if A is type(None) and a is None:
@@ -108,15 +125,15 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         if result is not None:
             return result
     if is_dataclass(A):
-        return ofdict_dataclass(A, a)
+        return ofdict_dataclass(A, a)  # type: ignore
     if A in [float, str, int, bytes]:  # [todo] etc
         if isinstance(a, A):
-            return a
+            return a  # type: ignore
         else:
             raise TypeError(f"Expected an {A} but was {type(a)}")
     try:
         if isinstance(a, A):
-            return a
+            return a  # type: ignore
     except TypeError:
         pass
     raise NotImplementedError(f"No implementation of ofdict for {A}.")
@@ -224,6 +241,22 @@ def todict(x: Any) -> JsonLike:
     This should not recurse on the arguments. Just return one of dict, list, tuple, str, int, float, bool, or None.
     `MyJsonEncoder` will run todict recursively on any child objects.
     """
+    if isinstance(x, OfDictUnion):
+        j = _todict_core(x)
+        cls = type(x)
+        root = cls._root_class
+        class_key = root._class_key
+        assert issubclass(cls, root)
+        assert cls in cls._class_table
+        assert isinstance(j, dict)
+        assert class_key not in j
+        j[class_key] = cls.__name__
+        return j
+    else:
+        return _todict_core(x)
+
+
+def _todict_core(x: Any):
     if isinstance(x, (str, int, float, bool)):
         return x
     if x is None:
@@ -335,6 +368,28 @@ def todict_rec(x: Any) -> JsonLike:
         return x
     else:
         raise TypeError(f"Don't know how to todict {type(x)}")
+
+
+class OfDictUnion:
+    _class_key: ClassVar[str] = "__class__"
+    _class_table: ClassVar[dict[str, type]]
+    _root_class: ClassVar[type["OfDictUnion"]]
+    """ Use this when you have a class hierarchy of types that you want
+    to be able to serialize using todict.
+
+    It works by also storing a  `"__class__": cls.__name__` entry on a class table.
+    When the dict is deserialised, it will look up this class name to find the subclass.
+    """
+
+    def __init_subclass__(cls, **kwargs):
+        if not hasattr(cls, "_class_table"):
+            # first time
+            cls._class_table = dict()
+            cls._root_class = cls
+        name = cls.__name__
+        assert name not in cls._class_table
+        cls._class_table[name] = cls
+        super().__init_subclass__(**kwargs)
 
 
 try:

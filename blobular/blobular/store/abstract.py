@@ -61,3 +61,6 @@ class AbstractBlobStore:
 
     def clear(self):
         raise NotImplementedError()
+
+    def __len__(self) -> int:
+        return len(list(self.iter()))

@@ -43,7 +43,9 @@ async def loopback_login(*, autoopen=False) -> str:
     if os.environ.get("SSH_CONNECTION", None) is not None:
         # we are running in an SSH connection, so loopback login won't work because
         # the browser likely won't open and the port
-        raise RuntimeError("SSH session detected: loopback login won't work. Please use an API key instead.")
+        raise RuntimeError(
+            "SSH session detected: loopback login won't work. Please use an API key instead."
+        )
     cfg = Settings.current()
     github_client_id = await get_github_client_id()
     # [todo] if there is already a valid jwt, don't bother logging in here.
@@ -69,7 +71,7 @@ async def loopback_login(*, autoopen=False) -> str:
             raise ValueError(f"github redirect did not include a `jwt` param")
         if not fut.done():
             fut.set_result(ps)
-        return web.Response(text="Done")
+        raise web.HTTPFound(cfg.cloud_url)
 
     # ref: https://docs.aiohttp.org/en/stable/web_lowlevel.html
     server = web.Server(redirected)
@@ -93,6 +95,12 @@ async def loopback_login(*, autoopen=False) -> str:
     console.print("Successfully logged in.")
     console.print(f"Saving authentication token to {cfg.secrets_file}.")
     cfg.persist_jwt(jwt)
+    return jwt
+
+
+def get_jwt():
+    cfg = Settings.current()
+    jwt = cfg.get_jwt()
     return jwt
 
 

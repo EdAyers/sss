@@ -7,6 +7,8 @@ import os
 import subprocess
 from subprocess import PIPE, CalledProcessError
 
+from pydantic import BaseSettings, SecretStr
+
 """ Helpers for working with projects, config files etc. """
 
 logger = logging.getLogger("miniscutil.config")
@@ -133,3 +135,53 @@ def get_config(p: Path, key: Union[str, tuple[str, ...]]) -> Any:
     for k in key:
         j = j[k]
     return j
+
+
+class SecretPersist:
+    def _get_secret_prelude(self, key: str):
+        assert isinstance(self, BaseSettings)
+        fields = getattr(self, "__fields__")
+        assert key in fields
+        assert issubclass(SecretStr, fields[key].type)
+        assert fields[key].is_secret
+        cfg = getattr(self, "__config__")
+        secrets_file = getattr(self, "secrets_file")
+        secret_postfix = getattr(cfg, "secret_postfix", None)
+        if secret_postfix is None:
+            secret_postfix = "default"
+        elif secret_postfix in fields:
+            secret_postfix = getattr(self, secret_postfix)
+            assert isinstance(secret_postfix, str)
+        elif callable(secret_postfix):
+            secret_postfix = secret_postfix(self)
+        else:
+            raise ValueError(f"secret_postfix {secret_postfix} not found")
+        return secrets_file, secret_postfix
+
+    def persist_secret(self, key: str, secret: str):
+        file, postfix = self._get_secret_prelude(key)
+        logger.debug(f"Saving secret {key} for {postfix} to {file}")
+        persist_config(file, (key, postfix), secret)
+        setattr(self, key, SecretStr(secret))
+
+    def get_secret(self, key: str) -> Optional[str]:
+        file, postfix = self._get_secret_prelude(key)
+        secret: Optional[SecretStr] = getattr(self, key, None)
+        if secret is None:
+            try:
+                value = get_config(file, (key, postfix))
+                if value is None:
+                    logger.debug(f"{key} for {postfix} was invalidated")
+                    return None
+            except LookupError:
+                logger.debug(f"no {key} for {postfix} found in {file}")
+                return None
+            setattr(self, key, SecretStr(value))
+            return value
+        else:
+            return secret.get_secret_value()
+
+    def invalidate_secret(self, key: str):
+        file, postfix = self._get_secret_prelude(key)
+        persist_config(file, (key, postfix), None)
+        setattr(self, key, None)

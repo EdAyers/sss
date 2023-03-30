@@ -4,7 +4,7 @@ from typing import Any, Callable, ClassVar, Union
 from textwrap import indent
 from html import escape
 
-from miniscutil.ofdict import ofdict, todict_dataclass, ofdict_dataclass
+from miniscutil.ofdict import OfDictUnion, ofdict, todict_dataclass, ofdict_dataclass
 
 """ A rendering is the thing that we actually send over the wire to Javascript. """
 
@@ -77,10 +77,6 @@ class Rendering(ABC):
             cs[i] = r
             return replace(self, children=cs)  # type: ignore
         raise LookupError()
-
-    # [todo] below code means we can ofdict an abstract class.
-    # I want to abstract this and put in miniscutil.
-    # ideally; we can also get this working with generics and protocols.
 
     def __init_subclass__(cls, **kwargs):
         kind = cls.kind
