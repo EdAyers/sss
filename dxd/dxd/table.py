@@ -1,6 +1,6 @@
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
-from functools import reduce
+from functools import cache, reduce
 import logging
 import operator
 from typing import (
@@ -8,6 +8,7 @@ from typing import (
     Generic,
     Iterable,
     Iterator,
+    Literal,
     Optional,
     Type,
     TypeVar,
@@ -15,7 +16,7 @@ from typing import (
     overload,
 )
 from .engine import Engine, engine_context
-from .column import Column
+from .column import Column, col
 from .expr import Expr
 from .pattern import Pattern
 
@@ -48,24 +49,31 @@ class SchemaMeta(type):
             raise AttributeError(f"No column named {key}")
         return Column.of_field(self, field)
 
-    def default_name(self):
-        return self.__name__ + "_table"
-
 
 class Schema(metaclass=SchemaMeta):
+    @classmethod
+    def default_name(cls):
+        return cls.__name__ + "_table"
+
     @classmethod
     def create_table(
         cls: Type[T],
         name: Optional[str] = None,
         engine: Optional[Engine] = None,
         references: dict[Any, "Table[Any]"] = {},
+        check_schema: Literal["ignore", "raise", "clobber"] = "clobber",
     ) -> "Table[T]":
         # if clobber is true then if the table exists but the schema has changed we
         # just brutally wipe everything.
         # [todo] validate column names and table name.
         # [todo] migrations?
+        if not is_dataclass(cls):
+            raise TypeError(
+                f"{cls.__name__} is not a dataclass. "
+                f"dxd requires all Schema subclasses to be dataclasses."
+            )
         engine = engine or engine_context.get()
-        name = name or cls.default_name()
+        name = name or cls.default_name()  # type: ignore
 
         fields = [c.sql_schema for c in columns(cls)]
         if not any(c.primary for c in columns(cls)):
@@ -107,9 +115,37 @@ class Schema(metaclass=SchemaMeta):
                 else:
                     raise TypeError(f"unknown foreign key {repr(fk)}")
         fields = ",\n  ".join(fields)
+
+        if check_schema != "ignore":
+            schema_table = get_schema_table(engine)
+            schemas = list(
+                schema_table.select(
+                    where=(SchemaRecord.table_name == name)
+                    & (SchemaRecord.fields != fields)
+                )
+            )
+            if len(schemas) > 0:
+                if check_schema == "raise":
+                    raise RuntimeError(
+                        f"Schema for {name} has changed, please migrate the table and try again."
+                    )
+                elif check_schema == "clobber":
+                    logger.warning(
+                        f"Schema for {name} already exists, clobbering. Data is lost."
+                    )
+                    # [todo] add a feature where table names are prefixed with a schema version
+                    # just keep multiple incompatible tables.
+                    # [todo] migration stuff will eventually go here.
+                    # [todo] cascading?
+                    engine.execute(f"DROP TABLE {name};")
+                    schema_table.delete(where=(SchemaRecord.table_name == name))
+            schema_table.insert_one(
+                SchemaRecord(table_name=name, fields=fields), or_ignore=True
+            )
+
         q = f"CREATE TABLE IF NOT EXISTS {name} (\n  {fields}\n);"
         engine.execute(q)
-        return Table(name=name, connection=engine, schema=cls)
+        return Table(name=name, connection=engine, schema=cls)  # type: ignore
 
     @classmethod
     def as_column(cls, item: Union[Column, str]) -> Column:
@@ -388,4 +424,19 @@ def columns(x) -> Iterable[Column]:
         x = x.schema
     assert x is not Schema
     assert issubclass(x, Schema)
+    assert is_dataclass(x), f"Expected dataclass, got {type(x)}"
     return [Column.of_field(x, f) for f in fields(x)]
+
+
+@dataclass
+class SchemaRecord(Schema):
+    table_name: str = col(primary=True)
+    fields: str = col(primary=True)
+
+
+@cache
+def get_schema_table(engine: Engine) -> Table[SchemaRecord]:
+    table = SchemaRecord.create_table(
+        "_dxd_schema_table", engine, check_schema="ignore"
+    )
+    return table
