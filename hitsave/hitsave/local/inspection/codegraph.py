@@ -346,17 +346,24 @@ def get_module_imports(module_name: str) -> Dict[str, Symbol]:
                 r[asname] = mk_vertex(alias.name)
 
         def visit_ImportFrom(self, node: ast.ImportFrom):
-            if node.level > 0:
-                internal_warning(
-                    "Skipping relative import in", module_name, "\n ", ast.unparse(node)
-                )
-                return
             if node.module is None:
                 internal_error(
                     "trouble traversing python AST of", module_name, ast.unparse(node)
                 )
                 return
-            node_module: str = node.module
+            node_module = node.module
+            if node.level > 0:
+                # relative imports
+                # reference: https://docs.python.org/3/reference/import.html#package-relative-imports
+                level = node.level
+                package_name: str = module_name
+                while level > 0:
+                    m = importlib.import_module(package_name)
+                    assert m.__package__ is not None
+                    package_name = m.__package__
+                    level -= 1
+                node_module = package_name + "." + node.module
+
             for alias in node.names:
                 asname = alias.asname or alias.name
                 if asname in r:
