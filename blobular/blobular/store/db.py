@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 import io
-from typing import IO, Optional
+from typing import IO, Optional, Union
 from .abstract import AbstractBlobStore, BlobInfo, get_digest_and_length
 from dxd import col, Schema, Table
 
@@ -21,7 +21,7 @@ class BlobContent(Schema):
 class OnDatabaseBlobStore(AbstractBlobStore):
     def __init__(
         self,
-        table: str | Table[BlobContent],
+        table: Union[str, Table[BlobContent]],
     ):
         if isinstance(table, str):
             self.table = BlobContent.create_table(name=table)
@@ -58,7 +58,7 @@ class OnDatabaseBlobStore(AbstractBlobStore):
         content = r[0]
         return io.BytesIO(content)
 
-    def add(self, tape: IO[bytes] | bytes, *, digest=None, content_length=None):
+    def add(self, tape: Union[IO[bytes], bytes], *, digest=None, content_length=None):
         if isinstance(tape, bytes):
             tape = io.BytesIO(tape)
         tape.seek(0)

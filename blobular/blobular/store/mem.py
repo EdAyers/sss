@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import io
-from typing import IO
+from typing import IO, Optional, Union
 import warnings
 
 from ..util import human_size
@@ -9,7 +9,7 @@ from .abstract import AbstractBlobStore, BlobInfo, get_digest_and_length
 
 class InMemBlobStore(AbstractBlobStore):
     blobs: dict[str, bytes]
-    max_size: int | None
+    max_size: Optional[int]
 
     def __init__(self, max_size=2**10):
         self.max_size = max_size
@@ -21,7 +21,7 @@ class InMemBlobStore(AbstractBlobStore):
         return io.BytesIO(self.blobs[digest])
 
     def add(
-        self, tape: IO[bytes] | bytes, *, digest=None, content_length=None
+        self, tape: Union[IO[bytes], bytes], *, digest=None, content_length=None
     ) -> BlobInfo:
         if isinstance(tape, bytes):
             tape = io.BytesIO(tape)

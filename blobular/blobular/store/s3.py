@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import IO, Any, Optional
+from typing import IO, Any, Optional, Union
 from blobular.store.abstract import BlobInfo, get_digest_and_length, AbstractBlobStore
 
 """
@@ -30,7 +30,7 @@ class S3BlobStore(AbstractBlobStore):
 
     def add(
         self,
-        tape: IO[bytes] | bytes,
+        tape: Union[IO[bytes], bytes],
         *,
         digest: Optional[str] = None,
         content_length: Optional[int] = None,

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Any, NewType, Optional
+from typing import Any, NewType, Optional, Union
 from uuid import UUID
 from blobular.api.github_login import login_handler
 from fastapi import APIRouter, Depends
@@ -77,6 +77,9 @@ def from_auth_header(s: str):
         return ApiKey(value=s)
 
 
+AuthToken = Union[ApiKey, JwtClaims]
+
+
 def from_request(request: Request):
     """Get the authentication token from a request object.
 
@@ -84,7 +87,7 @@ def from_request(request: Request):
     """
     encoded_jwt = request.cookies.get("jwt")
     auth_header = request.headers.get("Authorization")
-    token: ApiKey | JwtClaims
+    token: AuthToken
     if encoded_jwt is not None:
         token = from_jwt(encoded_jwt)
     elif auth_header is not None:
@@ -94,7 +97,7 @@ def from_request(request: Request):
     return token
 
 
-def user_of_token(token: ApiKey | JwtClaims, db: Db) -> User:
+def user_of_token(token: AuthToken, db: Db) -> User:
     """Takes the given token, validates it and returns the corresponding user.
 
     Raises:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import IO, Iterable, Optional, Tuple
+from typing import IO, Iterable, Optional, Tuple, Union
 
 from blake3 import blake3
 
@@ -40,9 +40,9 @@ class AbstractBlobStore:
 
     def add(
         self,
-        tape: IO[bytes] | bytes,
+        tape: Union[IO[bytes], bytes],
         *,
-        digest: str | None = None,
+        digest: Optional[str] = None,
         content_length: Optional[int] = None,
     ) -> BlobInfo:
         """Save the tape file to the blob store.

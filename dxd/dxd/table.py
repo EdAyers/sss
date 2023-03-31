@@ -77,7 +77,7 @@ class Schema(metaclass=SchemaMeta):
         for c in columns(cls):
             fk = c.foreign_key
             if fk is not None:
-                table: Table | None = references.get(c, references.get(c.name, None))
+                table: Optional[Table] = references.get(c, references.get(c.name, None))
                 if table is None:
                     raise ValueError(
                         f"no reference table found for foreign key {repr(c)}"
