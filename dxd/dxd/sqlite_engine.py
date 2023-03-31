@@ -3,7 +3,7 @@ import logging
 from sqlite3 import PrepareProtocol as P, Connection
 import datetime
 import textwrap
-from typing import Any, Type
+from typing import Any, NewType, Type
 import uuid
 from miniscutil import as_optional, register_adapter
 from .engine import Engine
@@ -61,6 +61,10 @@ class SqliteEngine(Engine):
 
     def get_storage_type(self, T: Type):
         def core(T: Type):
+            if isinstance(T, NewType):
+                return core(T.__supertype__)
+            if not isinstance(T, type):
+                raise TypeError(f"{T} is not a type")
             if issubclass(T, str):
                 return "TEXT"
             elif issubclass(T, int):

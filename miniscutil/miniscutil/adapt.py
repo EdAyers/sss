@@ -3,7 +3,7 @@ from contextvars import ContextVar
 import datetime
 from enum import Enum
 from functools import singledispatch
-from typing import Any, Callable, Type, get_origin
+from typing import Any, Callable, NewType, Type, get_origin
 import uuid
 
 from .dispatch import Dispatcher, classdispatch
@@ -82,6 +82,10 @@ def restore(X, x):
             return x
         else:
             return restore(Y, x)
+
+    if isinstance(X, NewType):
+        r = restore(X.__supertype__, x)
+        return X(r)
 
     if get_origin(X) is None and isinstance(x, X):
         return x

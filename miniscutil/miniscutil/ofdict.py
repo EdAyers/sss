@@ -3,6 +3,7 @@ from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from functools import singledispatch
+import inspect
 import json
 from pathlib import Path
 from typing import (
@@ -21,7 +22,7 @@ from typing import (
 )
 import logging
 from .dispatch import classdispatch
-from .type_util import as_list, as_optional, is_optional
+from .type_util import as_list, as_optional, as_set, is_optional
 
 try:
     from typing import TypeGuard
@@ -82,20 +83,22 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         raise TypeError(
             f"please make sure your class {A} is referred using types and not string-escaped types"
         )
-    if issubclass(A, OfDictUnion):
+    if isinstance(A, NewType):
+        return A(ofdict(A.__supertype__, a))
+    if inspect.isclass(A) and issubclass(A, OfDictUnion):
         class_key = getattr(A, "_class_key", "__class__")
         ct = getattr(A, "_class_table", None)
         if ct is None:
             raise TypeError(f"failed to find class table for {A}")
         assert isinstance(a, dict)
-        C = a.get(class_key, None)
+        C: Optional[type] = a.get(class_key, None)
         if C is None:
             raise TypeError(
                 f"ofdict for a subclass of 'OfDictUnion' must include a '{class_key}' key."
             )
         if not issubclass(C, A):
             raise TypeError(f"Expected {C} to be a subclass of {A}")
-        A = C
+        A = C  # type: ignore
 
     if A is Any:
         return a  # type: ignore
@@ -148,6 +151,17 @@ def _list_ofdict(A, a):
         return [ofdict(X, y) for y in a]
     else:
         return a
+
+
+@ofdict.register(set)
+def _set_ofdict(A, a):
+    if not isinstance(a, list):
+        raise TypeError(f"Expected a list but got a {type(a)}")
+    X = as_set(A)
+    if X is not None:
+        return set(ofdict(X, y) for y in a)
+    else:
+        return set(a)
 
 
 @ofdict.register(dict)
@@ -294,6 +308,11 @@ def _todict_datetime(x):
 @todict.register(Path)
 def _todict_path(x):
     return str(x)
+
+
+@todict.register(set)
+def _todict_set(x):
+    return list(x)
 
 
 class MyJsonEncoder(json.JSONEncoder):

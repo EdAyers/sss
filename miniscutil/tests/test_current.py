@@ -47,5 +47,5 @@ def test_current():
 
     assert World.CURRENT != Hello.CURRENT
 
-    with raises(NotImplementedError):
+    with raises(TypeError):
         World.current()

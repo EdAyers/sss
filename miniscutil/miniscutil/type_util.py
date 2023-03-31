@@ -1,4 +1,5 @@
 from typing import (
+    Any,
     get_origin,
     get_args,
     Type,
@@ -34,9 +35,21 @@ def as_optional(T: Type) -> Optional[Type]:
 
 def as_list(T: Type) -> Optional[Type]:
     """If `T = List[X]`, return `X`, otherwise return None."""
+    if T == list:
+        return Any
     o = get_origin(T)
     if o is None:
         return None
     if issubclass(o, list):
+        return get_args(T)[0]
+    return None
+
+def as_set(T: Type) -> Optional[Type]:
+    if T == set:
+        return Any
+    o = get_origin(T)
+    if o is None:
+        return None
+    if issubclass(o, set):
         return get_args(T)[0]
     return None
