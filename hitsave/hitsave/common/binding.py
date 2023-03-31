@@ -30,7 +30,15 @@ class BindingKind(Enum):
     unresolved = "UNRESOLVED"
     """ Binding that we failed to resolve"""
 
-CODE_BINDING_KINDS = [BindingKind.fun, BindingKind.cls, BindingKind.imp, BindingKind.constant, BindingKind.external]
+
+CODE_BINDING_KINDS = [
+    BindingKind.fun,
+    BindingKind.cls,
+    BindingKind.imp,
+    BindingKind.constant,
+    BindingKind.external,
+]
+
 
 class Binding(ABC, OfDictUnion):
     kind: BindingKind
@@ -47,8 +55,8 @@ class Binding(ABC, OfDictUnion):
 @dataclass
 class BindingRecord(Schema):
     kind: BindingKind
-    deps: set[Symbol]
     diffstr: str
+    deps: set[Symbol] = col(encoding="json")
     digest: Digest = col(primary=True)
     user_id: Optional[UUID] = col(primary=True, default=None, foreign_key=True)
 

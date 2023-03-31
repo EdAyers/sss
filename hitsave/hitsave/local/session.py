@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import sqlite3
 from typing import Any
 from uuid import uuid4, UUID
@@ -36,6 +37,7 @@ from dxd.sqlite_engine import SqliteEngine
 """ Everything to do with state in the HitSave local instance. """
 
 
+@dataclass
 class FakeUser(Schema):
     id: UUID = col(primary=True)
 
@@ -84,15 +86,25 @@ class Session(Current):
         )
 
     def get_fn_digests(self, s: Symbol):
-        dependencies = {str(dep) : get_binding(dep) for dep in self.codegraph.get_dependencies(s)}
-        code_dependencies = {k:str(v.digest) for k,v in dependencies.items() if v.kind in CODE_BINDING_KINDS}
+        dependencies = {
+            str(dep): get_binding(dep) for dep in self.codegraph.get_dependencies(s)
+        }
+        code_dependencies = {
+            k: str(v.digest)
+            for k, v in dependencies.items()
+            if v.kind in CODE_BINDING_KINDS
+        }
         bindings_digest = digest_dictionary(code_dependencies)
-        closure_dependencies = {k:str(v.digest) for k,v in dependencies.items() if v.kind not in CODE_BINDING_KINDS}
+        closure_dependencies = {
+            k: str(v.digest)
+            for k, v in dependencies.items()
+            if v.kind not in CODE_BINDING_KINDS
+        }
         closure_digest = digest_dictionary(closure_dependencies)
         return {
-            "symbol" : s,
-            "bindings_digest" : bindings_digest,
-            "closure_digest" : closure_digest,
+            "symbol": s,
+            "bindings_digest": bindings_digest,
+            "closure_digest": closure_digest,
         }
 
         return digest_dictionary(

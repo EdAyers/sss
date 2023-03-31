@@ -134,7 +134,7 @@ class EvalStore:
             e = self.evals.select_one(
                 where={
                     Eval.symbol: symbol,
-                    Eval.binding_digest: binding_digest,
+                    Eval.bindings_digest: binding_digest,
                     Eval.status: EvalStatus.resolved,
                 }
             )
@@ -152,6 +152,7 @@ class EvalStore:
         args: Optional[list[Arg]] = None,
         deps: dict[Symbol, Binding],
         start_time: Optional[datetime] = None,
+        session_id: UUID,
     ) -> UUID:
         """Tell the evalstore that we have started a new evaluation."""
         # [todo] enforce this: deps is Dict[symbol, digest]
@@ -208,6 +209,7 @@ class EvalStore:
                     is_experiment=is_experiment,
                     id=id,
                     args=args,
+                    session_id=session_id,
                 ),
             )
             return id

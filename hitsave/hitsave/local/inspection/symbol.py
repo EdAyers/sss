@@ -76,7 +76,7 @@ def symtable_of_module_name(module_name: str) -> Optional[st.SymbolTable]:
 
 
 @cache
-def get_module_spec(module_name: str) -> ModuleSpec:
+def get_module_spec(module_name: str) -> Optional[ModuleSpec]:
     assert isinstance(module_name, str)
     m = sys.modules.get(module_name)
     spec = None
@@ -85,8 +85,12 @@ def get_module_spec(module_name: str) -> ModuleSpec:
         spec = getattr(m, "__spec__")
     if spec is None:
         # [todo] this can raise a value error if `module_name = '__main__'` and we are degubbing.
-        spec = importlib.util.find_spec(module_name)
-    assert spec is not None
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except ValueError:
+            return None
+    if spec is None:
+        raise ModuleNotFoundError(module_name)
     return spec
 
 
@@ -100,7 +104,7 @@ def module_name_of_file(path: Union[str, Path]) -> Optional[str]:
     path = str(Path(path).absolute())
     # reference: https://stackoverflow.com/questions/897792/where-is-pythons-sys-path-initialized-from
     ps = [p for p in sys.path]
-    ps.reverse()
+    # ps.reverse() # [todo] is a reverse needed?
     for p in ps:
         if p == "":
             continue

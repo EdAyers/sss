@@ -90,7 +90,9 @@ class Eval(Schema):
     args_digest: Digest = col()
     session_id: UUID = col()
     """ The execution session that ran the eval. """
-    dependencies: dict[Symbol, Digest] = col()  # [todo] implement as a 'join dict'
+    dependencies: dict[Symbol, Digest] = col(
+        encoding="json"
+    )  # [todo] implement as a 'join dict'
     """ Map from symbols to digests of Bindings. """
     is_experiment: bool = col(default=False)
     """ An eval marked as experiment will not be deleted by caching system. """

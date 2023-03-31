@@ -111,6 +111,7 @@ class SavedFunction(Generic[P, R]):
             args=pretty_args,
             deps=dependencies,
             start_time=start_time,
+            session_id=session.id,
         )
         # [todo] catch, log and rethrow errors raised by inner func.
         try:

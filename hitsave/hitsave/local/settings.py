@@ -25,10 +25,8 @@ from miniscutil import (
 from miniscutil.config import SecretPersist
 
 from pydantic import BaseSettings, Field, SecretStr
+from hitsave.__about__ import __version__
 
-__version__ = importlib.metadata.version(
-    "hitsave"
-)  # this is ultimately retrieved from '__about__.py'
 app_name = "hitsave"
 
 logger = logging.getLogger(app_name)
@@ -39,7 +37,9 @@ class Settings(BaseSettings, Current, SecretPersist):
     """ URL for the HitSave website. """
     cloud_url: str = Field("https://api.hitsave.io")
     """ URL for hitsave cloud API server. """
-    github_client_id: str = Field("a569cafe591e507b13ca") # [todo] get this from cloud_url
+    github_client_id: str = Field(
+        "a569cafe591e507b13ca"
+    )  # [todo] get this from cloud_url
     """ This is the github client id used to authenticate the app. """
     no_advert: bool = Field(True)
     """ If this is true then we won't bother you with a little advert for signing up to hitsave.io on exit. """
