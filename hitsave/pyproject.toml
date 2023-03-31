@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hitsave"
-description = ''
+description = 'Cache anything.'
 readme = "README.md"
 requires-python = ">=3.7"
 license = "MIT"
 keywords = []
 authors = [
-  { name = "E.W.Ayers", email = "edward.ayers@outlook.com" },
+  { name = "E.W.Ayers", email = "contact@edayers.com" },
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -25,11 +25,13 @@ classifiers = [
 ]
 dependencies = [
   "blake3",
+  "aiohttp",
+  "typer",
 ]
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/unknown/hitsave#readme"
+Documentation = "https://github.com/EdAyers/sss/tree/main/hitsave#readme"
 Issues = "https://github.com/unknown/hitsave/issues"
 Source = "https://github.com/unknown/hitsave"
 
@@ -40,10 +42,42 @@ path = "hitsave/__about__.py"
 dependencies = [
   "pytest",
   "pytest-cov",
+  "pytest-snapshot",
+  "hypothesis",
+  "numpy",
+  "torch",
+  "miniscutil @ {root:uri}/../miniscutil",
+  "dxd @ {root:uri}/../dxd",
+  "uxu @ {root:uri}/../uxu",
+  "blobular @ {root:uri}/../blobular "
 ]
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=hitsave --cov=tests {args}"
 no-cov = "cov --no-cov {args}"
+
+[tool.hatch.envs.api]
+dependencies = [
+  "boto3",
+  "pydantic",
+  "pydantic[email]",
+  "pydantic[dotenv]",
+  "psycopg", "psycopg-binary",
+  "python-jose", # jwts
+  "fastapi",
+  "python-multipart",
+  "aiohttp", # for communicating with github
+  "gunicorn",
+  "uvicorn",
+  "miniscutil @ {root:uri}/../miniscutil",
+  "dxd @ {root:uri}/../dxd",
+  "uxu @ {root:uri}/../uxu",
+  "blobular @ {root:uri}/../blobular "
+]
+
+[tool.hatch.envs.api.scripts]
+prod = "gunicorn -c gunicorn_conf.py hitsave.api.app:app"
+dev = "uvicorn hitsave.api.app:app --reload --port 3000"
+
 
 [[tool.hatch.envs.test.matrix]]
 python = ["37", "38", "39", "310", "311"]
@@ -61,3 +95,6 @@ exclude_lines = [
   "if __name__ == .__main__.:",
   "if TYPE_CHECKING:",
 ]
+
+[project.scripts]
+hitsave = "hitsave.local.cli:app"
