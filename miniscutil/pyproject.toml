@@ -24,7 +24,8 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "typing-extensions; python_version <= '3.9'"
+  "typing-extensions; python_version <= '3.9'",
+  "pydantic",
 ]
 dynamic = ["version"]
 
@@ -41,6 +42,7 @@ dependencies = [
   "pytest",
   "pytest-cov",
   "numpy",
+  "pydantic",
 ]
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=miniscutil --cov=tests {args}"

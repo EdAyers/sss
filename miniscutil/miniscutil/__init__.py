@@ -26,3 +26,4 @@ from .config import (
     get_workspace_dir,
     get_git_root,
 )
+from .deep import walk
