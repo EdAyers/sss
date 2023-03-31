@@ -1,0 +1,3 @@
+{'numbers': 'tests.strat:numbers',
+ 'partition': 'miniscutil:partition',
+ 'wap': 'miniscutil:walk'}

@@ -1,0 +1,1 @@
+Symbol(outer, global,local,assigned,namespace)
