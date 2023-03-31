@@ -65,15 +65,16 @@ class OnDatabaseBlobStore(AbstractBlobStore):
         if digest is None or content_length is None:
             digest, content_length = get_digest_and_length(tape)
             tape.seek(0)
-
-        self.table.insert_one(
-            BlobContent(
-                content=tape.read(),
-                content_length=content_length,
-                digest=digest,
+        info = BlobInfo(digest=digest, content_length=content_length)
+        if not self.has(digest):
+            self.table.insert_one(
+                BlobContent(
+                    content=tape.read(),
+                    content_length=content_length,
+                    digest=digest,
+                )
             )
-        )
-        return BlobInfo(digest=digest, content_length=content_length)
+        return info
 
     def delete(self, digest: str):
         self.table.delete(where=BlobContent.digest == digest)
