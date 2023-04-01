@@ -27,3 +27,17 @@ jobs:
     with:
       lib: uxu
     secrets: inherit
+
+  build-blobular:
+    uses: "EdAyers/sss/.github/workflows/libraries.yaml@main"
+    needs: build-miniscutil
+    with:
+      lib: blobular
+    secrets: inherit
+
+  build-hitsave:
+    uses: "EdAyers/sss/.github/workflows/libraries.yaml@main"
+    needs: build-miniscutil
+    with:
+      lib: hitsave
+    secrets: inherit
