@@ -11,6 +11,7 @@ from uuid import UUID
 from blobular import AbstractBlobStore, BlobInfo
 from miniscutil import dict_diff
 from dxd import Schema, col, transaction, Table
+from pydantic import BaseModel
 
 from .binding import Binding, BindingRecord
 from .symbol import Symbol
@@ -79,6 +80,13 @@ class EvalStatus(Enum):
     """ The evaluation finished with an error or in some other incomplete state. (eg generator that never finished) """
     resolved = 2
     """ The evaluation finished successfully. """
+
+
+@dataclass
+class Session(Schema):
+    id: UUID = col(primary=True)
+    hostname: str = col()
+    started: datetime = col()
 
 
 @dataclass
