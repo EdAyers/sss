@@ -7,7 +7,7 @@ import os
 import subprocess
 from subprocess import PIPE, CalledProcessError
 
-from pydantic import BaseSettings, SecretStr
+from pydantic import BaseSettings, Field, SecretStr
 
 """ Helpers for working with projects, config files etc. """
 
@@ -142,8 +142,12 @@ class SecretPersist:
         assert isinstance(self, BaseSettings)
         fields = getattr(self, "__fields__")
         assert key in fields
-        assert issubclass(SecretStr, fields[key].type)
-        assert fields[key].is_secret
+        field = fields[key]
+        assert issubclass(SecretStr, field.annotation)
+        extra = field.field_info.extra
+        assert extra.get(
+            "is_secret", False
+        ), "please add the 'is_secret=True' kwarg to Field constructor"
         cfg = getattr(self, "__config__")
         secrets_file = getattr(self, "secrets_file")
         secret_postfix = getattr(cfg, "secret_postfix", None)

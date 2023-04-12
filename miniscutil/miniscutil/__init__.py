@@ -25,5 +25,6 @@ from .config import (
     get_app_cache_dir,
     get_workspace_dir,
     get_git_root,
+    SecretPersist,
 )
 from .deep import walk
