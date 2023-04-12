@@ -59,6 +59,9 @@ class SqliteEngine(Engine):
         with self.connection:
             yield self
 
+    def commit(self):
+        self.connection.commit()
+
     def get_storage_type(self, T: Type):
         def core(T: Type):
             if isinstance(T, NewType):

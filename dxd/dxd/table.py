@@ -145,6 +145,7 @@ class Schema(metaclass=SchemaMeta):
 
         q = f"CREATE TABLE IF NOT EXISTS {name} (\n  {fields}\n);"
         engine.execute(q)
+        engine.commit()
         return Table(name=name, connection=engine, schema=cls)  # type: ignore
 
     @classmethod
@@ -166,7 +167,7 @@ class Table(Generic[T]):
     schema: "Type[T]"
 
     def __len__(self):
-        c = self.connection.execute(f"SELECT COUNT(*) FROM {self.name}")
+        c = self.connection.execute(f"SELECT COUNT(*) FROM {self.name} ; ")
         return c.fetchone()[0]
 
     def drop(self, not_exists_ok: bool = True):

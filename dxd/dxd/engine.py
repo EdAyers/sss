@@ -40,6 +40,9 @@ class Engine(ABC):
     def restore(self, T, value):
         return restore(T, value)
 
+    def commit(self):
+        raise NotImplementedError()
+
     # [todo] transaction context manager
 
 

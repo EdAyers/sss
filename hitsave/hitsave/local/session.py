@@ -65,6 +65,7 @@ class Session(Current):
         )
         result_table = BlobContent.create_table("results", engine)
         blobspath = cfg.local_cache_dir / "blobs"
+        blobspath.mkdir(parents=True, exist_ok=True)
         local_file_store = LocalFileBlobStore(blobspath)
         # [todo] add cloud blobstore
         self.blobstore = SizedBlobStore(
