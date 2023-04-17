@@ -259,6 +259,7 @@ class RpcServer:
     status: RpcServerStatus
     transport: Transport
     init_mode: InitializationMode
+    name : str
     request_counter: int
     """ Unique id for each request I make to the peer. """
     my_requests: Dict[RequestId, Future[Any]]
@@ -280,6 +281,7 @@ class RpcServer:
         if name is None:
             self.name = f"<{type(self).__name__} {server_count}>"
         else:
+            assert isinstance(name, str)
             self.name = name
         self.init_mode = init_mode
         if init_mode == InitializationMode.NoInit:
