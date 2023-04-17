@@ -22,7 +22,7 @@ from typing import (
 )
 import logging
 from .dispatch import classdispatch
-from .type_util import as_list, as_optional, as_set, is_optional
+from .type_util import as_list, as_newtype, as_optional, as_set, is_optional
 
 try:
     from typing import TypeGuard
@@ -83,8 +83,9 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         raise TypeError(
             f"please make sure your class {A} is referred using types and not string-escaped types"
         )
-    if isinstance(A, NewType):
-        return A(ofdict(A.__supertype__, a))
+    S = as_newtype(A)
+    if S is not None:
+        return A(ofdict(S, a))
     if inspect.isclass(A) and issubclass(A, OfDictUnion):
         class_key = getattr(A, "_class_key", "__class__")
         ct = getattr(A, "_class_table", None)

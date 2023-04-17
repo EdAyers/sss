@@ -6,6 +6,7 @@ import textwrap
 from typing import Any, NewType, Type
 import uuid
 from miniscutil import as_optional, register_adapter
+from miniscutil.type_util import as_newtype
 from .engine import Engine
 
 logger = logging.getLogger("dxd.sqlite3")
@@ -64,8 +65,9 @@ class SqliteEngine(Engine):
 
     def get_storage_type(self, T: Type):
         def core(T: Type):
-            if isinstance(T, NewType):
-                return core(T.__supertype__)
+            S = as_newtype(T)
+            if S is not None:
+                return core(S)
             if not isinstance(T, type):
                 raise TypeError(f"{T} is not a type")
             if issubclass(T, str):

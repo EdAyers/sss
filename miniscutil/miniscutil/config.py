@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 import subprocess
 from subprocess import PIPE, CalledProcessError
+from miniscutil.type_util import is_subtype
 
 from pydantic import BaseSettings, Field, SecretStr
 
@@ -143,7 +144,7 @@ class SecretPersist:
         fields = getattr(self, "__fields__")
         assert key in fields
         field = fields[key]
-        assert issubclass(SecretStr, field.annotation)
+        assert is_subtype(SecretStr, field.annotation)
         extra = field.field_info.extra
         assert extra.get(
             "is_secret", False

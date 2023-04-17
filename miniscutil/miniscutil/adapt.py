@@ -7,7 +7,7 @@ from typing import Any, Callable, NewType, Type, get_origin
 import uuid
 
 from .dispatch import Dispatcher, classdispatch
-from .type_util import as_optional
+from .type_util import as_newtype, as_optional
 
 """ Implementation of PEP-246 https://peps.python.org/pep-0246/#specification
 
@@ -83,8 +83,9 @@ def restore(X, x):
         else:
             return restore(Y, x)
 
-    if isinstance(X, NewType):
-        r = restore(X.__supertype__, x)
+    S = as_newtype(X)
+    if S is not None:
+        r = restore(S, x)
         return X(r)
 
     if get_origin(X) is None and isinstance(x, X):

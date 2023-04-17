@@ -1,5 +1,7 @@
+import inspect
 from typing import (
     Any,
+    NewType,
     get_origin,
     get_args,
     Type,
@@ -44,6 +46,11 @@ def as_list(T: Type) -> Optional[Type]:
         return get_args(T)[0]
     return None
 
+
+def as_newtype(T: Type) -> Optional[Type]:
+    return getattr(T, "__supertype__", None)
+
+
 def as_set(T: Type) -> Optional[Type]:
     if T == set:
         return Any
@@ -53,3 +60,19 @@ def as_set(T: Type) -> Optional[Type]:
     if issubclass(o, set):
         return get_args(T)[0]
     return None
+
+
+def is_subtype(T1: Type, T2: Type) -> bool:
+    """Polyfill for issubclass.
+
+    Pre 3.10 doesn't have good support for subclassing unions.
+    """
+    try:
+        return issubclass(T1, T2)
+    except TypeError:
+        if get_origin(T2) is Union:
+            return any(is_subtype(T1, a) for a in get_args(T2))
+        S = as_newtype(T2)
+        if S is not None:
+            return is_subtype(T1, S)
+        raise
