@@ -34,6 +34,8 @@ jobs:
       - name: Run tests
         working-directory: "./${{ inputs.lib }}"
         run: hatch run test:no-cov
+      # [todo] bump version
+
       # [todo]
       # - name: Build documentation
       #   working-directory: "./${{ inputs.lib }}"
@@ -45,25 +47,26 @@ jobs:
 
   # [todo] enable publishing
   # [todo] release notes?
+  # [todo] version patch?
   # [todo] release gate?
-  # publish:
-  #   runs-on: ubuntu-latest
-  #   needs: build
-  #   environment: production
-  #   env:
-  #     HATCH_INDEX_USER: __token__
-  #     HATCH_INDEX_AUTH: ${{ secrets.pypi_password }}
-  #   if: github.ref == 'refs/heads/main'
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - name: Install Hatch
-  #       run: pipx install hatch
-  #     - name: Build dist
-  #       working-directory: "./${{inputs.lib}}"
-  #       run: hatch build
-  #     - name: Publish on PyPI
-  #       run: hatch publish
-  #       working-directory: "./${{inputs.lib}}"
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+    env:
+      HATCH_INDEX_USER: __token__
+      HATCH_INDEX_AUTH: ${{ secrets.HATCH_INDEX_AUTH }}
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Hatch
+        run: pipx install hatch
+      - name: Build dist
+        working-directory: "./${{inputs.lib}}"
+        run: hatch build
+      - name: Publish on PyPI
+        run: hatch publish
+        working-directory: "./${{inputs.lib}}"
 
   # [todo]
   # deploy:
