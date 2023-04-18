@@ -30,14 +30,19 @@ jobs:
 
   build-blobular:
     uses: "EdAyers/sss/.github/workflows/libraries.yaml@main"
-    needs: build-miniscutil
+    needs:
+      - build-dxd
+      - build-uxu
     with:
       lib: blobular
     secrets: inherit
 
   build-hitsave:
     uses: "EdAyers/sss/.github/workflows/libraries.yaml@main"
-    needs: build-miniscutil
+    needs:
+      - build-blobular
+      - build-dxd
+      - build-uxu
     with:
       lib: hitsave
     secrets: inherit
