@@ -5,8 +5,7 @@ import datetime
 import textwrap
 from typing import Any, NewType, Type
 import uuid
-from miniscutil import as_optional, register_adapter
-from miniscutil.type_util import as_newtype
+from miniscutil import as_optional, register_adapter, as_newtype
 from .engine import Engine
 
 logger = logging.getLogger("dxd.sqlite3")

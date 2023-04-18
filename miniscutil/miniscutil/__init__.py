@@ -17,7 +17,7 @@ from .misc import (
 )
 from .adapt import adapt, restore, register_adapter
 from .current import Current
-from .type_util import as_optional, is_optional
+from .type_util import as_optional, is_optional, as_list, as_newtype
 from .sum import Sum
 from .dispatch import Dispatcher, classdispatch
 from .config import (

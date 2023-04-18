@@ -25,9 +25,13 @@ classifiers = [
 ]
 dependencies = [
   "blake3",
-  # "dxd",
+
+  "miniscutil",
+  "dxd",
+  "uxu",
 
   # cli deps
+  # [todo] move these to a feature dependency
   "requests",
   "rich",
   "typer",
