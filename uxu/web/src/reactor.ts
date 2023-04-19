@@ -52,12 +52,26 @@ interface WidgetSpec<P> {
 
 type Rendering = RenderedText | RenderedElement | RenderedFragment | RenderedWidget
 
+interface Reorder {
+    l1_len: number
+    l2_len: number
+    remove_these: { [key: string]: null | string }
+    then_insert_these: { [key: string]: [0, string] | [1, Rendering] }
+}
+
 interface ModifyChildrenPatch {
     kind: 'modify-children'
     element_id: string;
-    children_length_start: number;
-    remove_these: Map<number, null | string>
-    then_insert_these: Map<number, [0, string] | [1, Rendering]>
+    reorder: Reorder;
+}
+
+function mapOfObject<T>(obj: { [key: string]: T }): Map<number, T> {
+    const map = new Map()
+    for (const key of Object.keys(obj)) {
+        const value = obj[key]
+        map.set(Number.parseInt(key), value)
+    }
+    return map
 }
 
 interface ModifyAttributesPatch {
@@ -177,6 +191,7 @@ class DomManager {
             const handler = (args: any) => this.onEvent({ element_id: vn.id, handler_id, name: key, params: args })
             vn.handlers.set(key, handler)
             elt.addEventListener(key, handler)
+            console.debug('added handler', vn.node.nodeType, key, handler_id)
         } else if (key == 'style') {
             for (const sk in value) {
                 const sv = value[sk];
@@ -194,6 +209,7 @@ class DomManager {
             const handler = vn.handlers.get(key)!;
             elt.removeEventListener(key, handler)
             vn.handlers.delete(key)
+            console.debug('remove handler', vn.node.nodeType, key)
         } else {
             elt.removeAttribute(key);
         }
@@ -319,15 +335,19 @@ class DomManager {
     }
 
     modifyChildren(patch: ModifyChildrenPatch): void {
+        const remove_these = mapOfObject(patch.reorder.remove_these)
+        const then_insert_these = mapOfObject(patch.reorder.then_insert_these)
+        const l1_len = patch.reorder.l1_len
         const fidx = this.getFragmentIdx(patch.element_id)
         const vn = this.nodes.get(patch.element_id)!
         const elt: Element = vn.node as any
-        if (elt.childNodes.length < patch.children_length_start) {
-            console.error(`modifyChildren: ${elt} has ${elt.childNodes.length} children but was expected to have at least ${patch.children_length_start}`)
+        if (elt.childNodes.length < l1_len) {
+            console.error(`modifyChildren: ${elt} has ${elt.childNodes.length} children but was expected to have at least ${l1_len}`)
         }
         const cvns = vn.child_ids.map(id => this.nodes.get(id)!)
         const bucket = new Map()
-        const removals = Array.from(patch.remove_these.entries()).sort((a, b) => a[0] - b[0])
+
+        const removals = Array.from(remove_these.entries()).sort((a, b) => a[0] - b[0])
         for (const [i, v] of removals) {
             const child_node = elt.childNodes[i + fidx]
             const cvn = cvns[i]
@@ -341,8 +361,8 @@ class DomManager {
                 this.remove(cvn.id)
             }
         }
-        vn.child_ids = vn.child_ids.filter((id, i) => !patch.remove_these.has(i))
-        const insertions = Array.from(patch.then_insert_these.entries()).sort((a, b) => b[0] - a[0])
+        vn.child_ids = vn.child_ids.filter((id, i) => !remove_these.has(i))
+        const insertions = Array.from(then_insert_these.entries()).sort((a, b) => b[0] - a[0])
         for (const [j, kv] of insertions) {
             const cb = (j + fidx) >= elt.childNodes.length ? null : elt.childNodes[j + fidx]
             const new_vn: VdomNode = kv[0] === 0 ? bucket.get(kv[1]) : this.create(kv[1], vn.id)
