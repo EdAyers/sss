@@ -45,9 +45,9 @@ def Counter() -> Html:
     return h(
         "div",
         [
-            h("button", ["+"], onclick=lambda _: x.modify(lambda x: x + 1)),
+            h("button", ["+"], click=lambda _: x.modify(lambda x: x + 1)),
             str(x.current),
-            h("button", ["-"], onclick=lambda _: x.modify(lambda x: x - 1)),
+            h("button", ["-"], click=lambda _: x.modify(lambda x: x - 1)),
         ],
     )
 
@@ -77,6 +77,13 @@ class UxuSessionParams:
     params: dict[str, str] = field(default_factory=dict)
 
 
+# https://stackoverflow.com/questions/66093397/how-to-disable-starlette-static-files-caching
+class MyStatics(StaticFiles):
+    def is_not_modified(self, response_headers, request_headers) -> bool:
+        # your own cache rules goes here...
+        return False
+
+
 class UxuApplication:
     """
     I'm not completely sure how this should work yet, but the idea is that
@@ -97,7 +104,7 @@ class UxuApplication:
             routes=[
                 Mount(
                     "/static",
-                    app=StaticFiles(packages=[("uxu", "static")]),
+                    app=MyStatics(packages=[("uxu", "static")]),
                     name="static",
                 ),
                 # https://www.starlette.io/routing#websocket-routing
