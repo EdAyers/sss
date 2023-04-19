@@ -11,13 +11,14 @@ from pydantic import BaseModel, BaseSettings, Field, SecretStr
 import dominate
 import dominate.tags as t
 from jose import ExpiredSignatureError, JWTError, jwt
-
+import tempfile
 from starlette.responses import HTMLResponse
 from starlette.requests import Request
 from starlette.routing import Route, Mount, WebSocketRoute
 from starlette.applications import Starlette
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket
+from uxu.fiber import useState
 
 from uxu.manager import EventArgs, Manager, render_static
 from uxu.persistence import PersistDict
@@ -31,20 +32,34 @@ from uxu.__about__ import __version__
 from uxu.rpc.jsonrpc import invalid_params, rpc_method
 from uxu.html import h
 from uxu.rendering import RootRendering
+from uxu.session import UxuSession
+from uxu.vdom import Html
 
 # https://fastapi.tiangolo.com/advanced/websockets/?h=websocket
 
 logger = logging.getLogger("uxu")
 
 
+def Counter() -> Html:
+    x = useState(0)
+    return h(
+        "div",
+        [
+            h("button", ["+"], onclick=lambda _: x.modify(lambda x: x + 1)),
+            str(x.current),
+            h("button", ["-"], onclick=lambda _: x.modify(lambda x: x - 1)),
+        ],
+    )
+
+
 def HelloWorld(text: str):
     """Just a simple component to test things."""
     return h(
-        "main",
-        {},
+        "div",
         [
-            h("h1", {}, "Hello World"),
-            h("p", {}, ["The content was: ", text]),
+            h("h1", "Hello World"),
+            h("p", ["The content was: ", text]),
+            h(Counter),
         ],
     )
 
@@ -68,6 +83,7 @@ class UxuApplication:
     UxuApplication is a valid ASGI app that you can dump into Starlette or FastAPI or whatever.
 
     For now, I'm just doing dependency injection but I want to do this properly.
+    [todo] allow turning off auth ticketing.
 
     """
 
@@ -154,7 +170,7 @@ class UxuApplication:
     async def handle_websocket(self, websocket: WebSocket):
         await websocket.accept()
         transport = StarletteWebsocketTransport(websocket)
-        with UxuSession(
+        with UxuWebSession(
             transport, self.persistence, socket_url=str(websocket.url)
         ) as server:
             await server.serve_forever()
@@ -173,9 +189,13 @@ class TicketClaims(BaseModel):
 class Settings(BaseSettings):
     jwt_expires: timedelta = Field(default=timedelta(hours=2))
     jwt_algorithm: str = Field(default="HS256")
-    jwt_secret: SecretStr
+    jwt_secret: SecretStr = Field(
+        default_factory=lambda: SecretStr("watch out this is the default string!")
+    )
 
-    persistent_dict_path: Path = Field(default=Path("tmp/uxu_server.sqlite"))
+    persistent_dict_path: Path = Field(
+        default_factory=lambda: Path(tempfile.gettempdir()) / "uxu_server.sqlite"
+    )
 
     class Config:
         env_file = ".env"
@@ -198,7 +218,7 @@ class UxuInitResponse(BaseModel):
     serverInfo: PeerInfo
 
 
-class UxuSession(RpcServer):
+class UxuWebSession(UxuSession):
     """Handles a websocket session."""
 
     def __init__(
@@ -207,10 +227,9 @@ class UxuSession(RpcServer):
         persistence: PersistDict[UxuSessionParams],
         socket_url: str,
     ):
-        super().__init__(transport, init_mode=InitializationMode.ExpectInit)
+        super().__init__(transport=transport, spec=None)
         self.persistence = persistence
         self.socket_url = socket_url
-        self.manager = Manager(is_static=False)
 
     @rpc_method("initialize")
     async def on_initialize(self, params: UxuInitParams):
@@ -241,45 +260,6 @@ class UxuSession(RpcServer):
         return UxuInitResponse(
             serverInfo=PeerInfo(name="uxu-server", version=__version__)
         )
-
-    @rpc_method("initialized")
-    def on_initialized(self, params):
-        logger.debug("client successfully initialized")
-        return
-
-    @rpc_method("render")
-    def on_render(self, params):
-        """Request to render."""
-        return self.manager.render()
-
-    @rpc_method("event")
-    def handle_event(self, params: EventArgs):
-        return self.manager.handle_event(params)
-
-    async def patcher_loop(self):
-        while True:
-            try:
-                patches = await self.manager.wait_patches()
-                if len(patches) > 0:
-                    result = await self.request("patch", patches)
-                    # [todo] send encoded patches
-                    logger.debug(f"patcher_loop patched: {result}")
-            except asyncio.CancelledError:
-                logger.debug("patcher_loop: cancelled")
-                break
-            except Exception as e:
-                # [todo] this is for debugging only
-                logger.exception("patcher_loop threw an exception")
-                break
-        logger.debug("patcher_loop: done")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if hasattr(self, "patch_task"):
-            self.patch_task.cancel()
-        self.manager.dispose()
 
 
 app = UxuApplication()

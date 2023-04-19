@@ -15,7 +15,7 @@ from .transport import Transport, TransportClosedError, TransportClosedOK
 
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
-logger = logging.getLogger("jsonrpc")
+logger = logging.getLogger(__name__)
 
 
 class ErrorCode(Enum):
@@ -78,6 +78,12 @@ class Request:
 
     def to_bytes(self):
         return encoder.encode(self).encode()
+
+    def __str__(self):
+        if self.id is None:
+            return f"notify {self.method}"
+        else:
+            return f"request {self.method}:{self.id}"
 
 
 @dataclass
@@ -259,7 +265,7 @@ class RpcServer:
     status: RpcServerStatus
     transport: Transport
     init_mode: InitializationMode
-    name : str
+    name: str
     request_counter: int
     """ Unique id for each request I make to the peer. """
     my_requests: Dict[RequestId, Future[Any]]
@@ -276,6 +282,10 @@ class RpcServer:
         name=None,
         init_mode: InitializationMode = InitializationMode.NoInit,
     ):
+        if not isinstance(transport, Transport):
+            raise TypeError(
+                f"transport must be an instance of uxu.rpc.Transport, not {type(transport)}"
+            )
         global server_count
         server_count += 1
         if name is None:
@@ -390,6 +400,9 @@ class RpcServer:
                 except ExitNotification as e:
                     logger.info(f"{self.name} received exit notification, terminating")
                     return
+                except KeyboardInterrupt as e:
+                    logger.exception(f"recieved kb interrupt, terminating")
+                    return
         finally:
             logger.info(f"exiting serve_forever loop")
             (_, e, _) = sys.exc_info()  # sys.exception() is 3.11 only
@@ -430,7 +443,7 @@ class RpcServer:
                 self._shutdown()
             task = asyncio.create_task(
                 self._on_request(req),
-                name=f"{self.name} handle {req.method} {req.id or ''} ",
+                name=f"{self.name} handle {req}",
             )
             id = req.id
             if id is not None:
@@ -456,7 +469,7 @@ class RpcServer:
         except ResponseError as e:
             await self.send(Response(id=req.id, error=e))
         except Exception as e:
-            logger.exception(f"{self} {req.id} unhandled exception")
+            logger.exception(f"{self} {req} unhandled exception. data:\n{req.params}")
             await self.send(
                 Response(
                     id=req.id,

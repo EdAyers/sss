@@ -210,7 +210,9 @@ class DomManager {
             }
             for (const child of x.children) {
                 const cn = this.create(child, x.id)
-                elt.appendChild(cn.node);
+                if (cn.node !== elt) {
+                    elt.appendChild(cn.node);
+                }
             }
             this.setVdom(vn)
             return vn

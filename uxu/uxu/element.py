@@ -19,7 +19,7 @@ from .vdom import (
 )
 from .rendering import Rendering, RenderedElement
 
-logger = logging.getLogger("reactor")
+logger = logging.getLogger("uxu")
 
 
 @dataclass

@@ -16,7 +16,7 @@ or at least mimick it.
 
 
 @overload
-def h(tag: str, attrs: dict, *children: Html, key: Optional[str] = None) -> ElementSpec:
+def h(tag: str, *children: Html, key: Optional[str] = None, **kwargs) -> ElementSpec:
     ...
 
 
@@ -25,18 +25,16 @@ def h(tag: Component[P], *args: P.args, **kwargs: P.kwargs) -> FiberSpec:
     ...
 
 
-def h(tag, attrs, *children: Html, key=None, **kwargs) -> Union[ElementSpec, FiberSpec]:  # type: ignore
+def h(tag, *children, key=None, **kwargs) -> Union[ElementSpec, FiberSpec]:  # type: ignore
     if type(tag) == str:
-        if not isinstance(attrs, dict):
-            raise TypeError("attrs must be a dict")
-        if len(kwargs) > 0:
-            raise ValueError("kwargs are not supported for tags")
+        # [todo] emmet-style parsing of tags. Eg 'h1.myclass'
+        attrs = kwargs
         if key is not None:
             attrs["key"] = key
         all_children = normalise_html(list(children))
         return ElementSpec(tag=tag, attrs=attrs, children=all_children)
     elif callable(tag):
-        args = [attrs, *children]
+        args = list(children)
         return FiberSpec(component=tag, props_args=args, key=key, props_kwargs=kwargs)
     else:
         raise TypeError(f"unrecognised tag: {tag}")
@@ -48,13 +46,13 @@ def h(tag, attrs, *children: Html, key=None, **kwargs) -> Union[ElementSpec, Fib
 
 def alias(tag):
     def core(*children, **attrs):
-        return h(tag, attrs, *children)
+        return h(tag, *children, **attrs)
 
     return core
 
 
 def img(src: str, alt="image"):
-    return h("img", dict(src=src, alt=alt))
+    return h("img", src=src, alt=alt)
 
 
 div = alias("div")

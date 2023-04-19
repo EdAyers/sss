@@ -170,7 +170,7 @@ class RenderedElement(Rendering):
 @dataclass
 class RenderedFragment(Rendering):
     id: Any
-    children: list["Rendering"]
+    children: list[Rendering]
     key: Any = field(default=None)
     kind: ClassVar[str] = "fragment"
 
@@ -190,7 +190,7 @@ class RenderedWidget:
 
 
 # [todo] put on Rendering methods
-def iter_event_handlers(x: "Rendering"):
+def iter_event_handlers(x: Rendering):
     if isinstance(x, RenderedElement):
         for name, v in x.attrs.items():
             if isinstance(v, EventHandler):

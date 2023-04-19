@@ -43,49 +43,40 @@ def layout(content, user: Optional[User] = Depends(try_get_user)):
     if user is not None:
         user_menu = h(
             "div",
-            {"class": 'class="pa4 tc"'},
             h(
                 "img",
-                {
-                    "className": "br-100 h3 w3 dib",
-                    "src": user.gh_avatar_url,
-                    "alt": user.gh_username,
-                },
+                className="br-100 h3 w3 dib",
+                src=user.gh_avatar_url,
+                alt=user.gh_username,
             ),
+            className="pa4 tc",
         )
     else:
-        user_menu = h("a", {"title": "sign in with GitHub", "href": url}, "sign in")
+        user_menu = h("a", "sign in", title="sign in with GitHub", href=url)
     return h(
         "body",
-        {},
         [
             h(
                 "header",
-                {"class": "flex justify-between items-center"},
                 [
-                    h("h1", {"class": "f1"}, "BLOBULAR"),
+                    h("h1", "BLOBULAR", className="f1"),
                     user_menu,
                 ],
+                className="flex justify-between items-center",
             ),
-            h("main", {}, content),
+            h("main", content),
             h(
                 "footer",
-                {"class": "bt pt3"},
                 [
                     h(
                         "a",
-                        {
-                            "href": "https://github.com/EdAyers/sss/tree/main/blobular"
-                        },  # [todo] get these from pyproject.toml
                         "GitHub Repository",
+                        href="https://github.com/EdAyers/sss/tree/main/blobular",  # [todo] get these from pyproject.toml
                     ),
-                    h(
-                        "a",
-                        {"href": "https://pypi.org/project/blobular/"},
-                        "PyPA Package",
-                    ),
-                    h("span", {}, "© 2023 E.W.Ayers"),
+                    h("a", "PyPA Package", href="https://pypi.org/project/blobular/"),
+                    h("span", "© 2023 E.W.Ayers"),
                 ],
+                className="bt pt3",
             ),
         ],
     )
@@ -99,14 +90,11 @@ def make_the_table(db: Db, user: User):
     if len(blobs) == 0:
         return h(
             "article",
-            {},
-            h("p", {}, "You don't have any blobs yet. Create more by running"),
+            h("p", "You don't have any blobs yet. Create more by running"),
             h(
                 "pre",
-                {},
                 h(
                     "code",
-                    {},
                     "pip install blobular\n",
                     "blobular login\n",
                     "blobular add my_file.txt\n",
@@ -116,32 +104,27 @@ def make_the_table(db: Db, user: User):
 
     return h(
         "table",
-        {},
         h(
             "thead",
-            {},
             h(
                 "tr",
-                {},
-                h("th", {}, "Digest"),
-                h("th", {}, "Size"),
-                h("th", {}, "Accesses"),
-                h("th", {}, "Last Accessed"),
-                h("th", {}, "Created"),
+                h("th", "Digest"),
+                h("th", "Size"),
+                h("th", "Accesses"),
+                h("th", "Last Accessed"),
+                h("th", "Created"),
             ),
         ),
         h(
             "tbody",
-            {},
             [
                 h(
                     "tr",
-                    {},
-                    h("td", {}, b.digest[:8]),
-                    h("td", {}, human_size(b.content_length)),
-                    h("td", {}, str(b.accesses)),
-                    h("td", {}, str(b.last_accessed)),
-                    h("td", {}, str(b.created)),
+                    h("td", b.digest[:8]),
+                    h("td", human_size(b.content_length)),
+                    h("td", str(b.accesses)),
+                    h("td", str(b.last_accessed)),
+                    h("td", str(b.created)),
                 )
                 for b in blobs
             ],
@@ -151,13 +134,13 @@ def make_the_table(db: Db, user: User):
 
 @router.get("/")
 async def read_root(user: User = Depends(try_get_user), db: Db = Depends(database)):
-    main = [h("p", {}, "Content-addressed filestore for Python.")]
+    main = [h("p", "Content-addressed filestore for Python.")]
     if user is not None:
-        main.append(h("p", {}, f"Signed in as {user.gh_username}."))
+        main.append(h("p", f"Signed in as {user.gh_username}."))
         main.append(make_the_table(db, user))
     else:
-        main.append(h("p", {}, "Not signed in."))
-    root = layout(h("p", {}, *main), user)
+        main.append(h("p", "Not signed in."))
+    root = layout(h("p", *main), user)
 
     # just do a full loop to get the render.
     r = render_static(root)

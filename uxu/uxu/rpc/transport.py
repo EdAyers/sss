@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from typing import Awaitable, Protocol
 
 """
@@ -31,9 +32,10 @@ class TransportError(Exception):
     """Transport recieved an invalid or corrupted message."""
 
 
-class Transport(Protocol):
+class Transport(ABC):
     """Abstract datagram transport. Data can be sent and recieved in finite-length bytestring messages."""
 
+    @abstractmethod
     def recv(self) -> Awaitable[bytes]:
         """Wait to recieve the a message.
 
@@ -44,5 +46,6 @@ class Transport(Protocol):
         """
         ...
 
+    @abstractmethod
     def send(self, data: bytes) -> Awaitable[None]:
         ...

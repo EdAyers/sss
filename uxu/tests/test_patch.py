@@ -67,8 +67,8 @@ examples = [
     div(),
     div(div("cheese", key="x"), div("world", key="y")),
     div(div("cheese", key="x"), div("world", key="x")),
-    h("span", {}, key="x"),
-    h("div", {}, key="x"),
+    h("span", key="x"),
+    h("div", key="x"),
     div(x="y"),
     div(x="z"),
     div(x="y", y="x"),
@@ -99,7 +99,7 @@ def test_patch_1():
 async def test_button():
     def C(x: str):
         y = useState("1")
-        return h("button", {"onclick": lambda _: y.set("2")}, [x, y.current])
+        return h("button", [x, y.current], onclick = lambda _: y.set("2"))
 
     with Manager() as m:
         m.initialize(h(C, "x"))

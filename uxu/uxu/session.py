@@ -1,11 +1,12 @@
 import asyncio
 import logging
+from typing import Any, Optional
 from pydantic import BaseModel
 from uxu.lsp.types import PeerInfo
 from uxu.manager import Manager, EventArgs
-from uxu.rpc import rpc_method, RpcServer
+from uxu.rpc import rpc_method, RpcServer, Transport
+from uxu.rpc.jsonrpc import InitializationMode
 from uxu.vdom import Html
-
 from uxu.__about__ import __version__
 
 
@@ -20,20 +21,16 @@ class InitResponse(BaseModel):
 logger = logging.getLogger(__name__)
 
 
-class UxuLocalSession(RpcServer):
-    def __init__(self, spec: Html):
+# [todo] make ABC
+class UxuSession(RpcServer):
+    def __init__(self, transport: Transport, spec: Optional[Html] = None):
+        super().__init__(transport, init_mode=InitializationMode.ExpectInit)
         self.manager = Manager(spec=spec, is_static=False)
 
-    @rpc_method("initialize")
-    async def on_initialize(self, params: InitParams):
-        self.patch_task = asyncio.create_task(self.patcher_loop())
-        return InitResponse(
-            serverInfo=PeerInfo(name="UxuLocalSession", version=__version__)
-        )
-
     @rpc_method("initialized")
-    async def on_initialized(self, params: InitParams):
-        logger.debug("UxuLocalSession initialized")
+    async def on_initialized(self, params: Any):
+        self.patch_task = asyncio.create_task(self.patcher_loop())
+        logger.debug(f"{self.name} initialized")
 
     @rpc_method("render")
     def on_render(self, params):
@@ -67,3 +64,14 @@ class UxuLocalSession(RpcServer):
         if hasattr(self, "patch_task"):
             self.patch_task.cancel()
         self.manager.dispose()
+
+
+class UxuLocalSession(UxuSession):
+    def __init__(self, transport: Transport, spec: Html):
+        super().__init__(transport, spec=spec)
+
+    @rpc_method("initialize")
+    async def on_initialize(self, params: InitParams):
+        return InitResponse(
+            serverInfo=PeerInfo(name="UxuLocalSession", version=__version__)
+        )

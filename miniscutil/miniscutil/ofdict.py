@@ -21,6 +21,8 @@ from typing import (
     get_origin,
 )
 import logging
+
+from pydantic import ValidationError
 from .dispatch import classdispatch
 from .type_util import as_list, as_newtype, as_optional, as_set, is_optional
 
@@ -421,7 +423,10 @@ try:
 
     @ofdict.register(BaseModel)
     def _ofdict_model(ModelCls: type[BaseModel], item):
-        return ModelCls.parse_obj(item)
+        try:
+            return ModelCls.parse_obj(item)
+        except ValidationError as e:
+            raise TypeError(f"Model {ModelCls.__name__} is invalid: {e}") from e
 
     # [todo] pydantic validation types like EmailStr, SecretStr etc
 except ImportError:

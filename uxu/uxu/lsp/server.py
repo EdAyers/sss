@@ -24,4 +24,4 @@ class LspServer(RpcServer):
 
     @rpc_method("initialized")
     async def on_client_initialized(self, params):
-        logger.info("Client initialized")
+        logger.info("client initialized")
