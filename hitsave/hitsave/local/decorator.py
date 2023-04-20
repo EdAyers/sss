@@ -2,6 +2,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 import inspect
 import pickle
+import asyncio
 from tempfile import SpooledTemporaryFile
 from typing import Any, Callable, Generic, List, Optional, Set, TypeVar, overload
 from uuid import uuid4
@@ -58,6 +59,9 @@ class SavedFunction(Generic[P, R]):
     debug_mode: bool = field(default=True)
     """ In debug mode, exceptions thrown in HitSave will not be swallowed. """
 
+    invalidate: Optional[bool] = field(default=None)
+    """ If true, the function is always rerun. If false, the most recent evaluation with the same arguments is used. """
+
     is_experiment: bool = field(default=False)
     """ An experiment is a variant of a SavedFunction which will not be deleted by the cache cleaning code. """
 
@@ -67,7 +71,7 @@ class SavedFunction(Generic[P, R]):
     _fn_hashes_reported: Set[str] = field(default_factory=set)
     _cache: dict[EvalKey, Any] = field(default_factory=dict)  # [todo] use weakref? lru?
 
-    def call_core(self, *args: P.args, **kwargs: P.kwargs) -> R:
+    async def _call_async(self, *args: P.args, **kwargs: P.kwargs):
         self.invocation_count += 1
         session = Session.current()
         sig = inspect.signature(self.func)
@@ -80,25 +84,44 @@ class SavedFunction(Generic[P, R]):
         if key in self._cache:
             return self._cache[key]
         evalstore = session.eval_store
+        result_digest = None
         try:
             result_digest = evalstore.get(key)
-            with session.blobstore.open(result_digest) as f:
-                value = pickle.load(f)
-            msg = f"Found cached value for {symbol}."
-            if self.invocation_count == 1:
-                user_info(msg)
-            else:
-                logger.debug(msg)
-            return value
-        except pickle.UnpicklingError:
-            logger.exception(f"unpickling failure")
         except EvalLookupError as e:
             if isinstance(e, CodeChangedError):
                 if key.bindings_digest not in self._fn_hashes_reported:
                     user_info(f"dependencies changed for ", symbol)
+                    if self.invalidate is False:
+                        user_info(
+                            f"using previous evalutation because invalidate=False is set"
+                        )
                     self._fn_hashes_reported.add(key.bindings_digest)
                 logger.debug(f"dependencies changed for {symbol}")
-            logger.debug(f"store miss for {symbol}")
+                if self.invalidate is False:
+                    ks = key.dict()
+                    del ks["bindings_digest"]
+                    # [todo] can do some extra checks here; eg has the return type changed?
+                    eval = list(evalstore.select(descending=True, limit=1, **ks))[0]
+                    eval.bindings_digest = key.bindings_digest
+                    evalstore.evals.insert_one(eval, or_ignore=True)
+                    result_digest = eval.result_digest
+                    logger.debug(f"found previous evalutation")
+                    # [todo] restructure so that we only insert if the unpickling is successful.
+            else:
+                logger.debug(f"store miss for {symbol}")
+        if result_digest is not None:
+            try:
+                with session.blobstore.open(result_digest) as f:
+                    value = pickle.load(f)
+                msg = f"found cached value for {symbol}"
+                if self.invocation_count == 1:
+                    user_info(msg)
+                else:
+                    logger.debug(msg)
+                return value
+            except pickle.UnpicklingError:
+                logger.exception(f"unpickling failure")
+
         # if we make it here in the code then we are
         # going to compute the function
         start_time = datetime.utcnow()
@@ -115,7 +138,10 @@ class SavedFunction(Generic[P, R]):
         )
         # [todo] catch, log and rethrow errors raised by inner func.
         try:
-            result = self.func(*args, **kwargs)
+            if asyncio.iscoroutinefunction(self.func):
+                result = await self.func(*args, **kwargs)
+            else:
+                result = self.func(*args, **kwargs)
         except Exception as e:
             evalstore.reject(
                 eval_id,
@@ -142,11 +168,32 @@ class SavedFunction(Generic[P, R]):
             evalstore.reject(eval_id)
             return result
 
+    def _call_sync(self, *args: P.args, **kwargs: P.kwargs):
+        assert not asyncio.iscoroutinefunction(self.func)
+        x = self._call_async(*args, **kwargs)
+        try:
+            # should throw StopIteration since no awaits in call_core code path
+            next(x.__await__())
+        except StopIteration as e:
+            return e.value
+        else:
+            raise RuntimeError(f"Expected StopIteration, got {x}")
+
+    @property
+    def is_async(self):
+        return asyncio.iscoroutinefunction(self.func)
+
+    def _call_core(self, *args: P.args, **kwargs: P.kwargs):
+        if self.is_async:
+            return self._call_async(*args, **kwargs)
+        else:
+            return self._call_sync(*args, **kwargs)
+
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         if self.debug_mode:
-            return self.call_core(*args, **kwargs)
+            return self._call_core(*args, **kwargs)
         try:
-            return self.call_core(*args, **kwargs)
+            return self._call_core(*args, **kwargs)
         except Exception as e:
             internal_error(
                 "Unhandled exception, falling back to decorator-less behaviour.\n", e
@@ -165,7 +212,9 @@ def memo(func: Callable[P, R]) -> SavedFunction[P, R]:
 
 @overload
 def memo(
-    *, local_only: bool = False
+    *,
+    local_only: bool = False,
+    invalidate=None,
 ) -> Callable[[Callable[P, R]], SavedFunction[P, R]]:
     ...
 

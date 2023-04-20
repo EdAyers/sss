@@ -7,7 +7,7 @@ from typing import Any, Iterator, Literal, NewType, Optional, ClassVar
 from uuid import UUID
 
 from dxd import transaction, Table
-
+from miniscutil.type_util import is_subtype
 from .symbol import Symbol
 from .binding import Binding, BindingRecord
 from .digest import Digest
@@ -54,12 +54,12 @@ class EvalStore:
     def delete(self, id: UUID):
         self.evals.delete(where=Eval.id == id)
 
-    def select(self, **kwargs):
+    def select(self, descending=False, limit=None, **kwargs):
         where = []
         for f in fields(EvalKey):
             v = kwargs.get(f.name, None)
             if v is not None:
-                if not isinstance(v, f.type):
+                if not is_subtype(type(v), f.type):
                     raise TypeError(
                         f"{f.name} must be {f.type.__name__}, not {type(v).__name__}"
                     )
@@ -69,8 +69,7 @@ class EvalStore:
         where = reduce(lambda x, y: x & y, where)
 
         return self.evals.select(
-            where=where,
-            order_by=Eval.start_time,
+            where=where, order_by=Eval.start_time, descending=descending, limit=limit
         )
 
     def get(self, key: EvalKey) -> Digest:

@@ -5,7 +5,7 @@ import json
 import pickle
 import inspect
 from typing import Any, Iterator, Literal, NewType, Optional, ClassVar
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from uuid import UUID
 
 from blobular import AbstractBlobStore, BlobInfo
@@ -72,6 +72,9 @@ class EvalKey:
 
     def __hash__(self):
         return hash(str(self))
+
+    def dict(self):
+        return {f.name: getattr(self, f.name) for f in fields(self)}
 
 
 class EvalStatus(Enum):
