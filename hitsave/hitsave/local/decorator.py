@@ -80,13 +80,15 @@ class SavedFunction(Generic[P, R]):
         pretty_args = create_arg(sig, ba)
         symbol = symbol_of_object(self.func)
         dependencies = session.fn_deps(symbol)
-        key = EvalKey(args_digest=args_digest, **session.get_fn_digests(symbol))
+        fn_digests = session.get_fn_digests(symbol)
+        key = EvalKey(args_digest=args_digest, **fn_digests)
         if key in self._cache:
             return self._cache[key]
         evalstore = session.eval_store
         result_digest = None
         try:
-            result_digest = evalstore.get(key)
+            if self.invalidate is not True:
+                result_digest = evalstore.get(key)
         except EvalLookupError as e:
             if isinstance(e, CodeChangedError):
                 if key.bindings_digest not in self._fn_hashes_reported:
@@ -119,7 +121,8 @@ class SavedFunction(Generic[P, R]):
                 else:
                     logger.debug(msg)
                 return value
-            except pickle.UnpicklingError:
+            except (pickle.UnpicklingError, ModuleNotFoundError) as e:
+                # ModuleNotFound can occur if you remove a module from your project.
                 logger.exception(f"unpickling failure")
 
         # if we make it here in the code then we are
@@ -183,7 +186,7 @@ class SavedFunction(Generic[P, R]):
     def is_async(self):
         return asyncio.iscoroutinefunction(self.func)
 
-    def _call_core(self, *args: P.args, **kwargs: P.kwargs):
+    def _call_core(self, *args: P.args, **kwargs: P.kwargs) -> Any:
         if self.is_async:
             return self._call_async(*args, **kwargs)
         else:
