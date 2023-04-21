@@ -75,6 +75,21 @@ def test_hashing_pickler_deps():
     assert len(ds) == 2
 
 
+MY_LIST = [1, 2, 3, 4]
+
+
+@memo
+def double_mylist():
+    return [x * 2 for x in MY_LIST]
+
+
+def test_closure2():
+    global MY_LIST
+    assert double_mylist() == [2, 4, 6, 8]
+    MY_LIST = [10, 11]
+    assert double_mylist() == [20, 22]
+
+
 if __name__ == "__main__":
     test_hashing_pickler_deps()
 

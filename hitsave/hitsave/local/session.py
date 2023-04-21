@@ -108,13 +108,6 @@ class Session(Current):
             "closure_digest": closure_digest,
         }
 
-        return digest_dictionary(
-            {
-                str(dep): get_binding(dep).digest
-                for dep in self.codegraph.get_dependencies(s)
-            }
-        )
-
     def fn_deps(self, s: Symbol) -> dict[Symbol, Binding]:
         """Returns a list of all bindings that the symbol depends on."""
         return {dep: get_binding(dep) for dep in self.codegraph.get_dependencies(s)}
