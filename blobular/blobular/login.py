@@ -4,9 +4,9 @@ from typing import Dict, Optional
 import webbrowser
 from aiohttp import web
 import aiohttp
-from blobular.cli.settings import Settings
-from blobular.cli.cloudutils import AuthenticationError
-from blobular.cli.console import console, is_interactive_terminal, logger
+from blobular.settings import Settings
+from blobular.cloudutils import AuthenticationError
+from blobular.console import console, is_interactive_terminal, logger
 import urllib.parse
 from pathlib import Path
 

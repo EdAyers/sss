@@ -15,51 +15,52 @@ from miniscutil.misc import append_url_params
 from pydantic import BaseModel, SecretStr
 from starlette.requests import Request
 from starlette.datastructures import URL
-from blobular.api.settings import Settings
+from .settings import Settings
 from blobular.store.s3 import S3BlobStore
 from blobular.store.cache import SizedBlobStore
 from blobular.store.localfile import LocalFileBlobStore
 from blobular.__about__ import __version__
+from rich.logging import RichHandler
 
-from blobular.registry import BlobClaim
-from blobular.api.authentication import (
+from .authentication import (
     AuthenticationError,
     JwtClaims,
     from_request,
     user_of_token,
 )
-from blobular.api.github_login import login_handler
+from .github_login import login_handler
 
-from blobular.api.persist import (
+from .persist import (
     BlobularApiDatabase as Db,
     User,
     ApiKey as ApiKeyEntry,
     database,
 )
-from blobular.store import (
-    AbstractBlobStore,
-    get_digest_and_length,
-    OnDatabaseBlobStore,
-    BlobContent,
-)
 from miniscutil import chunked_read
-from blobular.api.authentication import get_user
+from .authentication import get_user
 from dxd import transaction, engine_context
-from blobular.api.api import router as api_router
-from blobular.api.web import router as web_router
+from .api import router as api_router
+from .web import router as web_router
 from pathlib import Path
-import boto3
 
 app = FastAPI()
 app.include_router(api_router)
 app.include_router(web_router)
 
-logger = logging.getLogger("blobular")
+logger = logging.getLogger(__name__)
 
 
 @app.on_event("startup")
 def startup_event():
     database.connect()
+
+
+@app.on_event("startup")
+async def setup_loggers():
+    logger = logging.getLogger("server")
+    logger.setLevel(logging.DEBUG)  # [todo] if in dev mode
+    # handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(RichHandler())
 
 
 @app.on_event("shutdown")
@@ -95,21 +96,25 @@ async def web_login(
     cfg = Settings.current()
     jwt = await login_handler(code, db)
     max_age = int(cfg.jwt_expires.total_seconds())
-    domain = urlparse(cfg.cloud_url).netloc
+    domain = urlparse(cfg.cloud_url).hostname
     headers = {"Set-Cookie": f"jwt={jwt}; HttpOnly; Max-Age={max_age}; domain={domain}"}
 
     if redirect_uri is None:
         # [todo] allow redirects to other routes in our domain
         # remember: never allow arbitrary redirects to other domains
         # for now just always redirect to index.
+        logger.debug(f'redirect_uri is None')
         return RedirectResponse("/", headers=headers)
 
-    redirect_domain = urlparse(redirect_uri).netloc
-    if redirect_domain == domain:
+    redirect_domain = urlparse(redirect_uri)
+    # note: `.netloc` includes port, `.hostname` does not.
+    if redirect_domain.hostname == domain:
+        logger.debug(f'login redirect exact match')
         path = urlparse(redirect_uri).path
         return RedirectResponse(path, headers=headers)
-    elif redirect_domain.startswith("127.0.0.1"):
+    elif redirect_domain.hostname == "127.0.0.1":
         # local redirect for client loopback
+        logger.debug(f'login redirect is a localhost {redirect_domain}')
         redirect_uri = append_url_params(redirect_uri, jwt=jwt)
         headers.update(
             {

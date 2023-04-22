@@ -1,16 +1,15 @@
 from datetime import datetime
 import tempfile
 from typing import Optional
-from blobular.api.persist import User
 from blobular.registry import BlobClaim
 from blobular.store import get_digest_and_length
 from dxd import transaction
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from miniscutil import human_size, chunked_read
-from blobular.api.persist import User, database, BlobularApiDatabase as Db
-from blobular.api.authentication import get_user, router as auth_router
-from blobular.__about__ import __version__
+from .persist import User, database, BlobularApiDatabase as Db
+from .authentication import get_user, router as auth_router
+from .__about__ import __version__
 
 router = APIRouter(prefix="/api")
 router.include_router(auth_router)
@@ -19,9 +18,7 @@ router.include_router(auth_router)
 @router.get("/user")
 async def handle_get_user(user: User = Depends(get_user), db=Depends(database)):
     """Get the current user."""
-    usage = int(
-        db.blobs.sum(BlobClaim.content_length, where=BlobClaim.user_id == user.id)
-    )
+    usage = int(db.blobs.sum(BlobClaim.content_length, where=BlobClaim.user_id == user.id))
     return {
         "gh_id": user.gh_id,
         "gh_avatar_url": user.gh_avatar_url,
@@ -71,9 +68,7 @@ async def put_blob(
         actual_digest, content_length = get_digest_and_length(f)
         f.seek(0)
         if actual_digest != digest:
-            raise HTTPException(
-                status_code=400, detail=f"digest mismatch: I got {actual_digest}"
-            )
+            raise HTTPException(status_code=400, detail=f"digest mismatch: I got {actual_digest}")
         info = db.blobstore.add(f, digest=actual_digest, content_length=content_length)
 
     # [todo] perform in single query
@@ -108,13 +103,10 @@ async def put_blob(
 
 def get_claim(digest: str, user: User, db: Db = Depends(database)):
     claim = db.blobs.select_one(
-        where=(BlobClaim.digest == digest)
-        & ((BlobClaim.user_id == user.id) | (BlobClaim.is_public == True))
+        where=(BlobClaim.digest == digest) & ((BlobClaim.user_id == user.id) | (BlobClaim.is_public == True))
     )
     if claim is None:
-        raise HTTPException(
-            status_code=404, detail=f"no blob with digest {digest} found"
-        )
+        raise HTTPException(status_code=404, detail=f"no blob with digest {digest} found")
     assert claim.digest == digest, "oops"
     return claim
 
@@ -125,8 +117,7 @@ def touch(digest: str, user: User, db: Db):
             BlobClaim.last_accessed: datetime.utcnow(),
             BlobClaim.accesses: BlobClaim.accesses + 1,
         },
-        where=(BlobClaim.digest == digest)
-        & ((BlobClaim.user_id == user.id) | (BlobClaim.is_public == True)),
+        where=(BlobClaim.digest == digest) & ((BlobClaim.user_id == user.id) | (BlobClaim.is_public == True)),
     )
 
 
@@ -160,13 +151,9 @@ async def get_blob(digest: str, user: User = Depends(get_user), db=Depends(datab
 
 
 @router.delete("/blob/{digest}")
-async def delete_blob(
-    digest: str, user: User = Depends(get_user), db=Depends(database)
-):
+async def delete_blob(digest: str, user: User = Depends(get_user), db=Depends(database)):
     with transaction():
-        db.blobs.delete(
-            where=BlobClaim.digest == digest and BlobClaim.user_id == user.id
-        )
+        db.blobs.delete(where=BlobClaim.digest == digest and BlobClaim.user_id == user.id)
         if not db.blobs.has(where=BlobClaim.digest == digest):
             # [todo] race conditions?
             db.blobstore.delete(digest)

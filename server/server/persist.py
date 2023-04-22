@@ -11,12 +11,10 @@ from blobular.store.localfile import LocalFileBlobStore
 from blobular.store.s3 import S3BlobStore
 from dxd.sqlite_engine import SqliteEngine
 
-import psycopg
-
 from dxd import Schema, col, Table, engine_context, Engine
 from dxd.postgres_engine import PsycopgEngine
 from pydantic import PostgresDsn
-from blobular.api.settings import Settings  # we are using postgres
+from .settings import Settings  # we are using postgres
 from blobular.registry import BlobClaim
 
 logger = logging.getLogger("blobular")
@@ -41,7 +39,7 @@ class ApiKey(Schema):
 
 
 class BlobularApiDatabase:
-    connection: Union[psycopg.Connection, sqlite3.Connection]
+    connection: sqlite3.Connection
     engine: Engine
     users: Table[User]
     api_keys: Table[ApiKey]
@@ -59,6 +57,7 @@ class BlobularApiDatabase:
     def connect(self):
         cfg = Settings.current()
         if cfg.database_mode == "postgres":
+            import psycopg
             if cfg.pg is None:
                 raise ValueError("no postgres url found")
             self.connection = psycopg.connect(cfg.pg)

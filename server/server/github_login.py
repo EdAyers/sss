@@ -2,14 +2,18 @@ from datetime import datetime, timedelta
 from secrets import token_urlsafe
 from typing import Any, Optional
 from uuid import UUID
+import logging
+
 import aiohttp
-from dxd import transaction
 from fastapi import Depends
 from pydantic import BaseModel, EmailStr
+from jose import ExpiredSignatureError, JWTError, jwt
 
+from dxd import transaction
 from .settings import Settings
 from .persist import User, BlobularApiDatabase as Db
-from jose import ExpiredSignatureError, JWTError, jwt
+
+logger = logging.getLogger(__name__)
 
 
 class LoginError(Exception):
@@ -126,9 +130,7 @@ async def login_handler(code: str, db) -> str:
 
     primary_email = next((email for email in emails if email.primary), None)
     if primary_email is None:
-        raise NoPrimaryEmail(
-            "we only allow logins from GitHub users with a primary email."
-        )
+        raise NoPrimaryEmail("we only allow logins from GitHub users with a primary email.")
     # [todo] block unverified email?
     upsert: Any = dict(
         gh_id=user_info.id,
@@ -141,6 +143,7 @@ async def login_handler(code: str, db) -> str:
         # [todo] write Table.upsert
         user = db.users.select_one(where=User.gh_id == user_info.id)
         if user is None:
+            logger.info(f'new user: https://github.com/{user_info.login}')
             user = User(**upsert)
             db.users.insert_one(user)
         else:

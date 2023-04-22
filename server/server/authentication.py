@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Any, NewType, Optional, Union
 from uuid import UUID
-from blobular.api.github_login import login_handler
 from fastapi import APIRouter, Depends
 from miniscutil.misc import append_url_params
 from starlette.requests import Request
@@ -15,6 +14,8 @@ from fastapi.responses import StreamingResponse, PlainTextResponse, RedirectResp
 from pydantic import BaseModel, SecretStr
 from starlette.requests import Request
 from starlette.datastructures import URL
+
+from .github_login import login_handler
 from .settings import Settings
 from .persist import ApiKey as ApiKeyEntry, User, BlobularApiDatabase as Db, database
 
@@ -104,9 +105,7 @@ def user_of_token(token: AuthToken, db: Db) -> User:
         AuthenticationError: token is invalid.
     """
     if isinstance(token, ApiKey):
-        user_id = db.api_keys.select_one(
-            where=ApiKeyEntry.key == token.value, select=ApiKeyEntry.user_id
-        )
+        user_id = db.api_keys.select_one(where=ApiKeyEntry.key == token.value, select=ApiKeyEntry.user_id)
         if user_id is None:
             raise AuthenticationError("unknown API key")
         user = db.users.select_one(where=User.id == user_id)
@@ -152,9 +151,7 @@ def get_github_client_id():
 def generate_api_key(request: Request, db=Depends(database)):
     token = from_request(request)
     if not isinstance(token, JwtClaims):
-        raise AuthenticationError(
-            "you must be authenticated with a JWT to create an API key"
-        )
+        raise AuthenticationError("you must be authenticated with a JWT to create an API key")
     user = user_of_token(token, db)
     key = "hs-" + token_urlsafe(16)
     db.api_keys.insert_one(ApiKeyEntry(key=key, user_id=user.id))

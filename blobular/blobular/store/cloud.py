@@ -6,9 +6,8 @@ from rich.progress import Progress
 from blobular.util import chunked_read
 from .abstract import AbstractBlobStore, BlobInfo, get_digest_and_length
 
-# [todo] shouldn't really depend on cli
-from ..cli.cloudutils import request
-from ..cli.console import tape_progress, user_info, console
+from ..cloudutils import request
+from ..console import tape_progress, user_info, console
 import requests
 
 logger = logging.getLogger(__name__)

@@ -1,14 +1,15 @@
+import logging
 from typing import Any, Optional
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from miniscutil.misc import append_url_params, human_size
-from uxu import h, Manager, render_static
 import dominate
 import dominate.tags as t
 
 from blobular.registry import BlobClaim
 
+from uxu import h, Manager, render_static
 from .settings import Settings
 from .github_login import login_handler
 from .persist import ApiKey as ApiKeyEntry, BlobularApiDatabase as Db, database
@@ -23,6 +24,8 @@ Things to make:
 - list of your blobs -- ideally with some live reloading.
 - docs pages
 """
+
+logger = logging.getLogger(__name__)
 
 
 def get_sign_in_url():
@@ -84,9 +87,7 @@ def layout(content, user: Optional[User] = Depends(try_get_user)):
 
 def make_the_table(db: Db, user: User):
     # [todo] use dataframes there's no reason not to
-    blobs = list(
-        db.blobs.select(where=BlobClaim.user_id == user.id, order_by=BlobClaim.created)
-    )
+    blobs = list(db.blobs.select(where=BlobClaim.user_id == user.id, order_by=BlobClaim.created))
     if len(blobs) == 0:
         return h(
             "article",
@@ -134,6 +135,7 @@ def make_the_table(db: Db, user: User):
 
 @router.get("/")
 async def read_root(user: User = Depends(try_get_user), db: Db = Depends(database)):
+    logger.info(f'rendering main')
     main = [h("p", "Content-addressed filestore for Python.")]
     if user is not None:
         main.append(h("p", f"Signed in as {user.gh_username}."))

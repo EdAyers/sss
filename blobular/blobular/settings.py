@@ -37,6 +37,7 @@ class Settings(BaseSettings, Current, SecretPersist):
         env_file = ".env"
         env_file_encoding = "utf-8"
         secret_postfix = lambda self: self.cloud_url
+        env_prefix = "blobular_"
 
     @property
     def secrets_file(self) -> Path:

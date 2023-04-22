@@ -3,7 +3,7 @@ import random
 from miniscutil.misc import chunked_read
 
 import pytest
-from blobular.cli.state import AppState
+from blobular.state import AppState
 
 
 @pytest.fixture()

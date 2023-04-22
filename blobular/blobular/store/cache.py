@@ -2,7 +2,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from typing import IO, Literal
-from blobular.cli.console import tape_progress
+from blobular.console import tape_progress
 from blobular.util import human_size
 from dxd import col, Schema, Table, sum
 import logging

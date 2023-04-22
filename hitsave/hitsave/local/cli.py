@@ -5,13 +5,13 @@ from dataclasses import fields, asdict
 import asyncio
 import platform
 from enum import Enum
-from blobular.cli.login import (
+from blobular.login import (
     AuthenticationError,
     generate_api_key,
     get_jwt,
     loopback_login,
 )
-from blobular.cli.cloudutils import print_api_key_status, print_jwt_status
+from blobular.cloudutils import print_api_key_status, print_jwt_status
 from hitsave.local.console import console, decorate, logger, user_info
 from hitsave.local.settings import Settings
 from hitsave.common import EvalStore

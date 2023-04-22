@@ -5,12 +5,12 @@ from genericpath import isfile
 from io import BufferedReader
 from typing import IO, Any, List, Literal, Optional, Union
 
-from blobular.cli.console import user_info
-from ..store import AbstractBlobStore
+from blobular.console import user_info
+from .store import AbstractBlobStore
 from .settings import Settings, logger
 from .state import AppState
 import os.path
-from blake3 import blake3
+from blake3 import blake3  # type: ignore
 import os
 import shutil
 from pathlib import Path, PurePath
@@ -251,14 +251,15 @@ class DirectorySnapshot:
         path.mkdir(exist_ok=True, parents=True)
         return self.restore_at(path)
 
-    def restore(self, workspace_dir=None, overwrite=True) -> Path:
+    def restore(self, workspace_dir: Optional[Path] = None, overwrite=True) -> Path:
         """Restores the snapshotted directory. Returns the path of the directory that was restored."""
-        workspace_path = Path(workspace_dir or Settings.current().workspace_dir)
+        workspace_dir = workspace_dir or Settings.current().workspace_dir
+        assert workspace_dir is not None
         if self.relpath is None:
             raise ValueError(
                 "Can't restore directory without specific path. Try using restore_safe."
             )
-        abspath = workspace_path / self.relpath
+        abspath = workspace_dir / self.relpath
         user_info(f"Restoring directory snapshot at {abspath}.")
         self.restore_at(abspath, overwrite=overwrite)
         return abspath

@@ -9,28 +9,28 @@ from dataclasses import dataclass, fields, asdict
 import asyncio
 import platform
 from enum import Enum
-from blobular.cli.console import tape_progress
-from blobular.cli.state import AppState
-from blobular.cli.login import (
+from blobular.console import tape_progress
+from blobular.state import AppState
+from blobular.login import (
     AuthenticationError,
     generate_api_key,
     loopback_login,
 )
-from blobular.cli.cloudutils import (
+from blobular.cloudutils import (
     get_server_status,
     print_api_key_status,
     print_jwt_status,
     request,
 )
-from blobular.cli.console import (
+from blobular.console import (
     console,
     decorate,
     logger,
     user_info,
     is_interactive_terminal,
 )
-from blobular.cli.settings import Settings, APP_NAME
-from blobular.cli.filesnap import DirectorySnapshot, FileSnapshot
+from blobular.settings import Settings, APP_NAME
+from blobular.filesnap import DirectorySnapshot, FileSnapshot
 from rich.prompt import Confirm
 
 from blobular.__about__ import __version__ as version
@@ -223,6 +223,45 @@ def clear_local():
     """Delete all local blob data"""
     a = AppState.current()
     a.store.clear_cache()
+
+
+def print_jwt_status() -> bool:
+    """Returns true if we are authenticated with a JWT auth."""
+    cfg = Settings.current()
+    jwt = cfg.get_jwt()
+    if jwt is None:
+        print("Not logged in.")
+        return False
+    headers = {"Authorization": f"Bearer {jwt}"}
+    response = request("GET", "/user", headers=headers)
+    if response.status_code == 200:
+        print("Logged in.")
+        return True
+    if response.status_code == 401:
+        cfg.invalidate_jwt()
+        print("Login session expired.")
+        return False
+    if response.status_code == 403:
+        cfg.invalidate_jwt()
+        print("Invalid JWT. Deleting.")
+        return False
+    response.raise_for_status()
+    raise NotImplementedError(response)
+
+
+def print_api_key_status() -> None:
+    api_key = Settings.current().get_api_key()
+    if api_key is None:
+        print("No API key found.")
+        return
+    response = request("GET", "/user")
+    if response.status_code == 200:
+        print("API key valid.")
+    elif response.status_code == 401:
+        print("API key not valid.")
+    else:
+        response.raise_for_status()
+        print("Unknown response", response.status_code, response.text)
 
 
 if __name__ == "__main__":

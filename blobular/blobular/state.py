@@ -3,10 +3,10 @@ from dataclasses import dataclass, fields, asdict
 from enum import Enum
 from .settings import Settings, APP_NAME
 
-from ..__about__ import __version__ as version
+from .__about__ import __version__ as version
 from .console import is_interactive_terminal
 
-from ..store import (
+from .store import (
     AbstractBlobStore,
     SizedBlobStore,
     CacheBlobStore,
@@ -16,7 +16,7 @@ from ..store import (
     CacheRow,
     BlobContent,
 )
-from ..store.cloud import CloudBlobStore
+from .store.cloud import CloudBlobStore
 
 from miniscutil import Current
 from dxd import Table, engine_context
