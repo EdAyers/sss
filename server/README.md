@@ -21,6 +21,9 @@ hatch run dev
 Similar but run `hatch run prod`.
 The difference is that logs are sent to a file and there is less debug logging.
 And there is no live reloading.
+Make sure to creat the `logs/` folder.
+
+See `./deploy.md` for more info.
 
 ## Db management
 

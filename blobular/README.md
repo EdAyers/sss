@@ -22,8 +22,9 @@ pip install blobular
 
 ## Development
 
-Get the dev server working. Make sure you have vars in your `.env` file.
+Get the dev server working, see `../server`
 
 ```sh
-hatch run api:dev
+cd ../server
+hatch run dev
 ```
