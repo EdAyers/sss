@@ -95,6 +95,7 @@ def get_app_config_dir(app_name: str) -> Path:
 
 
 def get_app_cache_dir(app_name: str) -> Path:
+    """Returns the path that ths OS wants you to use to place application-specific caching files."""
     if sys.platform == "win32":
         p = Path(os.environ.get("LOCALAPPDATA", "~/.cache"))
     elif sys.platform == "linux":
@@ -139,6 +140,77 @@ def get_config(p: Path, key: Union[str, tuple[str, ...]]) -> Any:
 
 
 class SecretPersist:
+    """Mixin for managing secrets that live in a config file.
+
+    ## Worked example:
+
+    ```python
+    from pydantic import BaseSettings
+    from miniscutil import SecretPersist, get_app_config_dir
+
+    CONFIG_DIR = get_app_config_dir("my_app")
+
+    class Settings(BaseSettings, SecretPersist):
+        api_key: Optional[SecretStr] = Field(default=None, is_secret=True)
+
+        def get_api_key(self):
+            return self.get_secret("api_key")
+
+        def persist_api_key(self, api_key: str):
+            self.persist_secret("api_key", api_key)
+
+        @property
+        def secrets_file(self) -> Path:
+            return CONFIG_DIR / "secrets.json"
+
+        class Config:
+            env_file = ".env"
+            env_file_encoding = "utf-8"
+
+
+    if __name__ == "__main__":
+       cfg = Settings()
+       k1 = cfg.get_secret('api_key')
+       print(k1)
+       cfg.persist_secret('api_key', 'asdf')
+       k2 = cfg.get_secret('api_key')
+       print(k2)
+
+    ```
+
+    Note that if you want to access the secret, you should use `cfg.get_secret` instead of `cfg.api_key`.
+    The field will still be accessable but if the secret is stored in a config file then it won't automatically access it.
+    Once you have called 'get_secret' the value of `cfg.api_key` will be updated.
+
+    Note also that this means that if there is `api_key` present as an environment variable, this __takes precedence__
+    over the `api_key` field in the secrets file.
+
+    ## Adding multiple secrets for the same key but different configurations
+
+    Often you want to be able to store multiple secret values for different configurations.
+    For example you might need a different API key for dev/prod servers.
+
+    You can set this up by adding `secret_postfix` field to the pydantic config:
+
+    ```
+    class Settings(BaseSettings, SecretPersist):
+        mode : Literal['dev', 'prod'] = Field(default='dev')
+        ...
+        class Config:
+            ...
+            secret_postfix = lambda self: self.mode
+    ```
+
+    Now, when you call `persist_secret`, it will save it in a different slot determined by
+    `secret_postfix`. So now `get_secret`'s return value will depend on whether mode is dev or prod.
+
+    ## Todos
+
+    - [ ] add a warning if the secrets file is overridden
+    - [ ] automatically get the secret from the secret file on field access.
+
+    """
+
     def _get_secret_prelude(self, key: str):
         assert isinstance(self, BaseSettings)
         fields = getattr(self, "__fields__")
