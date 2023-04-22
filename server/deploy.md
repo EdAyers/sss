@@ -46,8 +46,8 @@ After=network.target
 [Service]
 User=ubuntu
 Group=www-data
-WorkingDirectory=/home/ubuntu/sss/blobular
-ExecStart=/home/ubuntu/sss/.venv/bin/gunicorn -c gunicorn_conf.py blobular.api.app:app
+WorkingDirectory=/home/ubuntu/sss/server
+ExecStart=/home/ubuntu/sss/.venv/bin/gunicorn -c gunicorn_conf.py server.app:app
 
 [Install]
 WantedBy=multi-user.target
