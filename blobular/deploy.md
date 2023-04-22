@@ -14,7 +14,7 @@ sudo apt update
 sudo apt install python3-pip python3-dev build-essential libssl-dev libffi-dev python3-setuptools
 
 # nginx
-sudo apt install nginx certbot python3-certbot-nginx
+sudo apt install nginx certbot python3-certbot-nginx ufw
 sudo ufw allow 'Nginx Full'
 ```
 
