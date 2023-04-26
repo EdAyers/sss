@@ -63,90 +63,13 @@ class Schema(metaclass=SchemaMeta):
         references: dict[Any, "Table[Any]"] = {},
         check_schema: Literal["ignore", "raise", "clobber"] = "clobber",
     ) -> "Table[T]":
-        # if clobber is true then if the table exists but the schema has changed we
-        # just brutally wipe everything.
-        # [todo] validate column names and table name.
-        # [todo] migrations?
-        if not is_dataclass(cls):
-            raise TypeError(
-                f"{cls.__name__} is not a dataclass. "
-                f"dxd requires all Schema subclasses to be dataclasses."
-            )
-        engine = engine or engine_context.get()
-        name = name or cls.default_name()  # type: ignore
-
-        fields = [c.sql_schema for c in columns(cls)]
-        if not any(c.primary for c in columns(cls)):
-            raise TypeError(
-                f"at least one of the fields in {cls.__name__} should be labelled as primary: `= col(primary = True)`"
-            )
-        ks = ", ".join([c.name for c in columns(cls) if c.primary])
-        fields.append(f"PRIMARY KEY ({ks})")
-        for c in columns(cls):
-            fk = c.foreign_key
-            if fk is not None:
-                table: Optional[Table] = references.get(c, references.get(c.name, None))
-                if table is None:
-                    raise ValueError(
-                        f"no reference table found for foreign key {repr(c)}"
-                    )
-                if isinstance(fk, Column):
-                    if table.schema != fk.schema:
-                        raise ValueError(
-                            f"Incompatible foreign key {repr(fk)} in {table}"
-                        )
-                    if fk.type != c.type:
-                        raise TypeError(
-                            f"types {repr(fk)} : {fk.type} and {repr(c)} : {c.type} do not match"
-                        )
-                    fields.append(
-                        f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({fk.name}) ON DELETE CASCADE"
-                    )
-                elif fk is True:
-                    # get the primary key
-                    p = table.primary_key_pattern()
-                    e = p.to_expr()
-                    assert len(e.values) == 0, "pattern had values"
-                    t = e.template
-                    logger.debug(f"Guessing template {t} for table {table.name}")
-                    fields.append(
-                        f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({t}) ON DELETE CASCADE"
-                    )
-                else:
-                    raise TypeError(f"unknown foreign key {repr(fk)}")
-        fields = ",\n  ".join(fields)
-
-        if check_schema != "ignore":
-            schema_table = get_schema_table(engine)
-            schemas = list(
-                schema_table.select(
-                    where=(SchemaRecord.table_name == name)
-                    & (SchemaRecord.fields != fields)
-                )
-            )
-            if len(schemas) > 0:
-                if check_schema == "raise":
-                    raise RuntimeError(
-                        f"Schema for {name} has changed, please migrate the table and try again."
-                    )
-                elif check_schema == "clobber":
-                    logger.warning(
-                        f"Schema for {name} already exists, clobbering. Data is lost."
-                    )
-                    # [todo] add a feature where table names are prefixed with a schema version
-                    # just keep multiple incompatible tables.
-                    # [todo] migration stuff will eventually go here.
-                    # [todo] cascading?
-                    engine.execute(f"DROP TABLE {name};")
-                    schema_table.delete(where=(SchemaRecord.table_name == name))
-            schema_table.insert_one(
-                SchemaRecord(table_name=name, fields=fields), or_ignore=True
-            )
-
-        q = f"CREATE TABLE IF NOT EXISTS {name} (\n  {fields}\n);"
-        engine.execute(q)
-        engine.commit()
-        return Table(name=name, connection=engine, schema=cls)  # type: ignore
+        return Table.create(
+            schema=cls,
+            name=name,
+            engine=engine,
+            references=references,
+            check_schema=check_schema,
+        )
 
     @classmethod
     def as_column(cls, item: Union[Column, str]) -> Column:
@@ -415,6 +338,101 @@ class Table(Generic[T]):
     def clear(self):
         q = f"DELETE FROM {self.name};"
         self.connection.execute(q)
+
+    @classmethod
+    def create(
+        cls,
+        schema: Type[T],
+        name: Optional[str] = None,
+        engine: Optional[Engine] = None,
+        references: dict[Any, "Table[Any]"] = {},
+        check_schema: Literal["ignore", "raise", "clobber"] = "clobber",
+    ):
+        # if clobber is true then if the table exists but the schema has changed we
+        # just brutally wipe everything.
+        # [todo] validate column names and table name.
+        # [todo] migrations?
+        if not is_dataclass(schema):
+            raise TypeError(
+                f"{schema.__name__} is not a dataclass. "
+                f"dxd requires all Schema subclasses to be dataclasses."
+            )
+            # [todo] pydantic support one day.
+        engine = engine or engine_context.get()
+        name = name or schema.default_name()  # type: ignore
+
+        fields = [c.sql_schema for c in columns(schema)]
+        if not any(c.primary for c in columns(schema)):
+            raise TypeError(
+                f"at least one of the fields in {schema.__name__} should be labelled as primary: `= col(primary = True)`"
+            )
+        ks = ", ".join([c.name for c in columns(schema) if c.primary])
+        fields.append(f"PRIMARY KEY ({ks})")
+        for c in columns(schema):
+            fk = c.foreign_key
+            if fk is not None:
+                table: Optional[Table] = references.get(c, references.get(c.name, None))
+                if table is None:
+                    raise ValueError(
+                        f"no reference table found for foreign key {repr(c)}"
+                    )
+                if isinstance(fk, Column):
+                    if table.schema != fk.schema:
+                        raise ValueError(
+                            f"Incompatible foreign key {repr(fk)} in {table}"
+                        )
+                    if fk.type != c.type:
+                        raise TypeError(
+                            f"types {repr(fk)} : {fk.type} and {repr(c)} : {c.type} do not match"
+                        )
+                    fields.append(
+                        f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({fk.name}) ON DELETE CASCADE"
+                    )
+                elif fk is True:
+                    # get the primary key
+                    p = table.primary_key_pattern()
+                    e = p.to_expr()
+                    assert len(e.values) == 0, "pattern had values"
+                    t = e.template
+                    logger.debug(f"Guessing template {t} for table {table.name}")
+                    fields.append(
+                        f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({t}) ON DELETE CASCADE"
+                    )
+                else:
+                    raise TypeError(f"unknown foreign key {repr(fk)}")
+        fields = ",\n  ".join(fields)
+
+        if check_schema != "ignore":
+            schema_table = get_schema_table(engine)
+            schemas = list(
+                schema_table.select(
+                    where=(SchemaRecord.table_name == name)
+                    & (SchemaRecord.fields != fields)
+                )
+            )
+            if len(schemas) > 0:
+                if check_schema == "raise":
+                    raise RuntimeError(
+                        f"Schema for {name} has changed, please migrate the table and try again."
+                    )
+                elif check_schema == "clobber":
+                    logger.warning(
+                        f"Schema for {name} already exists, clobbering. Data is lost."
+                    )
+                    # [todo] add a feature where table names are prefixed with a schema version
+                    # just keep multiple incompatible tables.
+                    # [todo] migration stuff will eventually go here.
+                    # [todo] cascading?
+                    engine.execute(f"DROP TABLE {name};")
+                    schema_table.delete(where=(SchemaRecord.table_name == name))
+            schema_table.insert_one(
+                SchemaRecord(table_name=name, fields=fields), or_ignore=True
+            )
+
+        q = f"CREATE TABLE IF NOT EXISTS {name} (\n  {fields}\n);"
+        engine.execute(q)
+        engine.commit()
+        return cls(name=name, connection=engine, schema=schema)  # type: ignore
 
 
 # [todo] Table should not be instantiated
