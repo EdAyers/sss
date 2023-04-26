@@ -15,6 +15,7 @@ from typing import (
     Union,
     overload,
 )
+from typing_extensions import dataclass_transform
 from .engine import Engine, engine_context
 from .column import Column, col
 from .expr import Expr
@@ -358,6 +359,7 @@ class Table(Generic[T]):
                 f"dxd requires all Schema subclasses to be dataclasses."
             )
             # [todo] pydantic support one day.
+        assert issubclass(schema, Schema)
         engine = engine or engine_context.get()
         name = name or schema.default_name()  # type: ignore
 
@@ -438,17 +440,23 @@ class Table(Generic[T]):
 # [todo] Table should not be instantiated
 
 
-def columns(x) -> Iterable[Column]:
+def columns(x: Union[Table[T], Schema, Type[Schema]]) -> Iterable[Column]:
+    """Get the columns of a table or schema."""
     if isinstance(x, Table):
         x = x.schema
-    assert x is not Schema
+    if isinstance(x, Schema):
+        x = type(x)
     assert issubclass(x, Schema)
+    if x is Schema:
+        raise TypeError("columns() must be called on a strict subclass of Schema.")
     assert is_dataclass(x), f"Expected dataclass, got {type(x)}"
     return [Column.of_field(x, f) for f in fields(x)]
 
 
 @dataclass
 class SchemaRecord(Schema):
+    """Used to store schemas of tables in the database. This is used for migrations."""
+
     table_name: str = col(primary=True)
     fields: str = col(primary=True)
 
@@ -459,3 +467,90 @@ def get_schema_table(engine: Engine) -> Table[SchemaRecord]:
         "_dxd_schema_table", engine, check_schema="ignore"
     )
     return table
+
+
+"""
+# [todo] Notes on what schemas are for
+
+I have this idea to have a single decorator called `@schema` which does everything.
+The idea is you are able to write
+
+```
+@schema
+class User:
+    name : str
+    email : str = col(primary = True)
+    birthday : date
+```
+
+
+Things that a schema gives you are:
+- Type-safe column names, you can write things like `users[User.name == "george"]`.
+  Otherwise you need a way of identifying the 'name' Column expression.
+- way to easily add extra metadata to columns (primary key, unique, foreign key, sql-implemented validation)
+- maybe also define indexes?
+
+So what does `@schema` do?
+- Wrap `User` in `@dataclass`,
+- Read off column metadata like 'primary' etc.
+- Add Column classvars to `User` for each column,
+
+So I think we can get away without a `Schema` mixin.
+Then we can decorate other things with `@schema` like pydantic models.
+`@schema` just sets a `__dxd_columns__` attribute on the class and column classvars if appropriate.
+
+I also want it to be possible to create tables without needing to use my special schema thing.
+
+You can do `Table.create(schema = X)` where:
+    - `X = dict[K, V]`
+    - `X` is a dataclass
+    - `X <: BaseModel`
+
+The only thing schema gives you is the ability to do the convenient column name stuff and column metadata.
+We can still get the column metadata using `users[users.name == "george"]`, but we won't be able to give the type of 'users.name'.
+
+# Query builders
+
+The next phase of dxd will use pandas-like constructions to build queries.
+This is similar to what some of these big-data tools like Spark do.
+
+When you write `users[users.name == "george"]` this is converted to a `View[User]` object.
+`users.name : Series[bool]`.
+
+The difference between a View and a Series is that a view has multiple columns that you can project to.
+But a series does not. Series[User] is like a stream of User objects.
+
+Each view and series is backed by a SQL query expression (currently reprsented as `Expr`).
+
+- `users.name` ↝ `SELECT name FROM users`
+- `users.name == 'george'` ↝ `SELECT (name == 'george') FROM users`
+- `users[users.name == 'george']` ↝ `SELECT * FROM users WHERE (name == 'george')`
+- `users[users.name == 'george'].birthday` ↝ `SELECT birthday FROM users WHERE (name == 'george')`
+
+Writing the query builder is going to be tricky, but definitely seems possible.
+There will be an interesting 'query-IL' structure that can be compiled to SQL.
+
+## Keytype management
+
+The key difference from pandas is that you can't assume an order on the rows,
+they are just indexed by some fintype that doesn't have a natural ordering.
+When you call `iter` on a view or series, an ordering is chosen but you aren't guaranteed to
+get the same ordering each time.
+
+Treating these 'indexes' or 'parameters' more abstractly is a good thing because it makes it
+harder to accidentally perform operations that don't make sense. I won't call them indexes because that
+already means something in databases. Instead lets call them keytype.
+
+For an array of length n, the keytype is `N = Fin(n)`.
+If we then argsort this array on `s`, a better keytype is not `N` again but instead an isomorphic type
+$M_{x, s}$. Then we write `argsort(x, s) : M ⇒ N`.
+For a table, the keytype is the set of primary keys.
+Also distinct keytypes, for filtering, grouping, joins, broadcasting.
+
+Suppose you filter your users by name, you now have a new index which is a subindex of the original
+table's index. Keeping track of the keytypes amounts to having dependent type theory, but it means
+that we don't accidentally perform an operation on two arrays that have the same size but are sorted differently etc.
+It also means that we don't confuse iterations of tables with the abstract, uniterated table.
+Even if we only keep track of keytypes in our heads they are useful.
+
+"""
