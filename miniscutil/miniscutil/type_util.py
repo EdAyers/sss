@@ -5,6 +5,7 @@ from typing import (
     get_origin,
     get_args,
     Type,
+    Literal,
     Optional,
     Union,
 )
@@ -32,6 +33,12 @@ def as_optional(T: Type) -> Optional[Type]:
                 return ts[0]
             else:
                 return Union[ts]  # type: ignore
+    return None
+
+
+def as_literal(T: Type) -> Optional[tuple[str, ...]]:
+    if get_origin(T) is Literal:
+        return get_args(T)
     return None
 
 
