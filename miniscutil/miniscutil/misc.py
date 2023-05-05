@@ -1,7 +1,9 @@
 from dataclasses import dataclass, is_dataclass, Field, fields
 from itertools import filterfalse, tee
 from datetime import datetime, timezone
+import contextvars
 from subprocess import check_output, CalledProcessError
+import contextlib
 from typing import (
     IO,
     Callable,
@@ -105,3 +107,27 @@ def append_url_params(url: str, **params) -> str:
     result = urlunparse(parts)
     assert isinstance(result, str)
     return result
+
+
+@contextlib.contextmanager
+def onectx(var: contextvars.ContextVar[X], mk: Callable[[], X]):
+    """If the context variable is not set, set it to the result of calling mk()."""
+    o = var.get(None)
+    if o is None:
+        x = mk()
+        token = var.set(x)
+        try:
+            yield x
+        finally:
+            var.reset(token)
+    else:
+        yield o
+
+
+@contextlib.contextmanager
+def newctx(var: contextvars.ContextVar[X], value: X):
+    token = var.set(value)
+    try:
+        yield value
+    finally:
+        var.reset(token)
