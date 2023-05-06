@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import contextvars
 from subprocess import check_output, CalledProcessError
 import contextlib
+from sys import _xoptions
+import itertools
 from typing import (
     IO,
     Callable,
@@ -131,3 +133,22 @@ def newctx(var: contextvars.ContextVar[X], value: X):
         yield value
     finally:
         var.reset(token)
+
+
+def intercalate(
+    items: Iterable[X],
+    sep: X,
+):
+    xs = iter(items)
+    yield next(xs)
+    for x in xs:
+        yield sep
+        yield x
+
+
+def interlace(items: Iterable[X], seps: Iterable[X]):
+    xs = iter(items)
+    yield next(xs)
+    for s, x in zip(seps, xs):
+        yield s
+        yield x

@@ -9,7 +9,7 @@ from typing import (
     TypeVar,
     Type,
     Callable,
-    ClassVar,
+    ClassVar, TypeAlias
 )
 from enum import Enum
 from miniscutil.type_util import as_optional, as_literal
@@ -26,7 +26,7 @@ from dxd.parser import ParseState, run_parser, is_word, tokenize
 from miniscutil.type_util import is_optional, as_literal
 import logging
 from contextvars import ContextVar
-from miniscutil.misc import onectx
+from miniscutil.misc import onectx, interlace
 from miniscutil import Current
 from collections import Counter
 import operator
@@ -476,7 +476,7 @@ def parse_op(p: ParseState, left, l_prec: int) -> Expr:
             return OpInstance(op, left, right)
     for op in OpRegistry.current().get_ops('postfix', l_prec)
         if op.try_parse(p):
-            return OpInstance(op, left)
+            return OpInstance(left)
     if p.try_take("COLLATE", case_sensitive=False):
         raise NotImplementedError()
     if p.try_parse(Globbie):
@@ -632,6 +632,18 @@ class WindowClause:
 FromClause = tuple[L["FROM"], JoinClause | list[TableOrSubquery]]
 WhereClause = tuple[L["WHERE"], Expr]
 
+@sql_clause
+class WhereClause:
+    _where : L['WHERE']
+    expr: Expr
+
+    def __and__(self, other):
+        other = expr(other)
+        return dataclasses.replace(self, expr= self.expr & other)
+
+    @classmethod
+    def create(cls, e):
+        return cls(_where='WHERE', expr=expr(e))
 
 @sql_clause
 class SelectCore:
@@ -643,6 +655,13 @@ class SelectCore:
     group_by_clause: None | tuple[L["GROUP BY"], list[Expr]]
     having_clause: None | tuple[L["HAVING"], Expr]
     window_clause: None | WindowClause
+
+    def add_where(self, e: Expr):
+        e = expr(e)
+        if self.where_clause is None:
+            return dataclasses.replace(self, where_clause=WhereClause.create(e))
+        else:
+            return dataclasses.replace(self, where_clause= self.where_clause & expr)
 
 
 class SelectValues:
@@ -656,13 +675,51 @@ class LimitClause:
     limit: Expr
     mode: O[tuple[L[",", "OFFSET"], Expr]]
 
+CompoundOperator : TypeAlias = L["UNION", "UNION ALL", "INTERSECT", "EXCEPT"]
 
 @sql_clause
+class OrderByClause:
+    _kw : L["ORDER BY"]
+    terms : list[OrderingTerm]
+
+@dataclasses.dataclass
 class SelectStatement:
     with_rec: O[WithRecClause]
-    core: SelectCore | SelectValues
-    order_by_clause: None | list[Expr]
+    core: list[SelectCore | SelectValues]
+    compound_ops: list[CompoundOperator]
+    order_by_clause: None | OrderByClause
     limit_clause: None | LimitClause
+
+    def __sql__(self):
+        acc = []
+        if self.with_rec is not None:
+            acc.append(sql(self.with_rec))
+        cores = list(map(sql, self.core))
+        compound_ops = list(map(sql, self.compound_ops))
+        assert len(cores) == len(compound_ops) + 1
+        acc += list(interlace(cores, compound_ops))
+        if self.order_by_clause is not None:
+            acc.append(sql(self.order_by_clause))
+        if self.limit_clause is not None:
+            acc.append(sql(self.limit_clause))
+        return " ".join(acc)
+
+    @classmethod
+    def __parse__(cls, p : ParseState):
+        with_rec = p.try_parse(WithRecClause)
+        C = U[SelectCore, SelectValues]
+        core = [p.parse(C)]
+        compound_ops = []
+        while True:
+            op = p.try_parse(CompoundOperator)
+            if op is None:
+                break
+            compound_ops.append(op)
+            core.append(p.parse(C))
+        order_by_clause = p.try_parse(OrderByClause)
+        limit_clause = p.try_parse(LimitClause)
+        return cls(with_rec, core, compound_ops, order_by_clause, limit_clause)
+
 
 
 ReturningItem = U[L["*"], tuple[Expr, O[tuple[O[L["AS"]], Identifier]]]]
