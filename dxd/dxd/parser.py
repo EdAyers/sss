@@ -1,7 +1,7 @@
 import shlex
 import re
 import typing
-from typing import Type, ClassVar, TypeVar, Optional
+from typing import Type, ClassVar, TypeVar, Optional, Protocol, Any
 import types
 from contextlib import contextmanager
 
@@ -65,10 +65,10 @@ class ParseState:
                 pass
         raise ValueError(f"Expected one of {xs}")
 
-    def try_take(self, x: str) -> bool:
+    def try_take(self, x: str, case_sensitive=True) -> bool:
         try:
             with self.attempt():
-                self.take(x)
+                self.take(x, case_sensitive=case_sensitive)
                 return True
         except:
             return False
@@ -95,15 +95,18 @@ class ParseState:
                     item = item.lower()
                 assert r == item
             return x
-        raise ValueError(f"Expected {x}, got {item}")
+        raise AssertionError(f"Expected {x}, got {item}")
 
-    def can_take(self, x: str) -> bool:
-        try:
-            with self.attempt():
-                self.take(x)
-                return True
-        except:
-            return False
+    def can_take(self, *xs: str, case_sensitive=True) -> bool:
+        """Returns true if the parser can successfully take at least one of the given strings."""
+        for x in xs:
+            try:
+                with self.attempt():
+                    self.take(x, case_sensitive=case_sensitive)
+                    return True
+            except:
+                pass
+        return False
 
     @contextmanager
     def attempt(self):

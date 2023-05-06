@@ -8,6 +8,7 @@ from typing import (
     Generic,
     TypeVar,
     Type,
+    Callable,
     ClassVar,
 )
 from enum import Enum
@@ -26,7 +27,10 @@ from miniscutil.type_util import is_optional, as_literal
 import logging
 from contextvars import ContextVar
 from miniscutil.misc import onectx
+from miniscutil import Current
 from collections import Counter
+import operator
+from numbers import Number
 
 logger = logging.getLogger("dxd")
 
@@ -106,7 +110,7 @@ def _sql_int(x: int):
 
 
 @dataclass_transform()
-def sql_expr(cls: Type[T]) -> Type[T]:
+def sql_clause(cls: Type[T]) -> Type[T]:
     ParseState.type_registry[cls.__name__] = cls
     cls = dataclasses.dataclass(cls)
     fields = dataclasses.fields(cls)
@@ -180,6 +184,52 @@ class Expr(ABC):
     def __sql__(self):
         raise NotImplementedError()
 
+    def __add__(self, other):
+        return InfixOp(self, other, "+")
+
+    def __radd__(self, other):
+        return InfixOp(other, self, "+")
+
+    def __and__(self, other):
+        return InfixOp(self, other, "AND")
+
+    def __or__(self, other):
+        return InfixOp(self, other, "OR")
+
+    def __eq__(self, other):
+        return InfixOp(self, other, "==")
+
+    def __ne__(self, other):
+        return InfixOp(self, other, "!=")
+
+    def __not__(self):
+        return PrefixOp(self, "NOT")
+
+    def __bool__(self):
+        raise ValueError(
+            f"{self} is not a boolean expression (please use & and | instead of 'and' and 'or')"
+        )
+
+
+@functools.singledispatch
+def expr(item: Any) -> Expr:
+    raise NotImplementedError(f"don't know how to make Expr of {type(item)}")
+
+
+@expr.register(str)
+def _str_expr(item: str):
+    return QuotedString(item)
+
+
+@expr.register(int)
+def _int_expr(item: int):
+    return IntLiteral(item)
+
+
+@expr.register(Expr)
+def _expr_expr(item: Expr):
+    return item
+
 
 @dataclasses.dataclass
 class NamedPlaceholder(Expr):
@@ -201,6 +251,12 @@ class NamedPlaceholder(Expr):
 @dataclasses.dataclass
 class UnnamedPlaceholder(Expr):
     value: Any
+
+    def __str__(self):
+        if self.value is dataclasses.MISSING:
+            return "?"
+        else:
+            return f"⟨{self.value}⟩"
 
     def __sql__(self):
         ph_ctx.get().add_arg(self.value)
@@ -246,76 +302,113 @@ class IntLiteral(int, Expr):
         return sign * int(item)
 
 
-@dataclasses.dataclass
-class InfixOp(Expr):
-    left: Expr
-    right: Expr
-    precedence: int
-    operator: str
-
-    def __sql__(self):
-        l = with_brackets(self.left, self.precedence)
-        r = with_brackets(self.right, self.precedence)
-        return f"{l} {self.operator} {r}"
+FixType = L["infix", "postfix", "prefix"]
 
 
 @dataclasses.dataclass
-class PrefixOp(Expr):
-    right: Expr
-    precedence: int
-    operator: str
+class Op:
+    sql_name: str
+    python_name: O[str]
+    python_fn: Callable
+    sql_precedence: int
+    fix: FixType
+    arg_types: list[Type]
+    return_type: Type
+
+    def try_parse(self, p : ParseState):
+        return p.try_take(self.sql_name)
+
+    def sql(self, args):
+        args = [with_brackets(a, self.sql_precedence) for a in args]
+        if self.fix == "infix":
+            l, r = args
+            return f"{l} {self.sql_name} {r}"
+        elif self.fix == "postfix"
+            l, = args
+            return f"{l} {self.sql_name}"
+        elif self.fix == "prefix":
+            r, = args
+            return f"{self.sql_name} {r}"
+        else:
+            raise NotImplementedError(self.fix)
+
+
+class OpInstance(Expr):
+    op : Op
+    args : list[Expr]
+
+    def __init__(self, op : Op, *args):
+        self.op = op
+        assert len(args) == len(op.arg_types)
+        self.args = [expr(arg) for arg in args]
 
     def __sql__(self):
-        r = with_brackets(self.right, self.precedence)
-        return f"{self.operator} {r}"
+        return self.op.sql(self.args)
 
+class OpRegistry(Current):
+    def __init__(self, ops: list[Op]):
+        self.ops = ops
 
-PREFIX_OPS = {"NOT": 2, "~": 11, "+": 11, "-": 11}
-BINARY_OPS = {
-    "||": 9,
-    "->": 9,
-    "->>": 9,
-    "*": 8,
-    "/": 8,
-    "%": 8,
-    "+": 7,
-    "-": 7,
-    "&": 6,
-    "|": 6,
-    "<<": 6,
-    ">>": 6,
-    "<": 4,
-    ">": 4,
-    "<=": 4,
-    ">=": 4,
-    "=": 3,
-    "==": 3,
-    "!=": 3,
-    "<>": 3,
-    "IS": 3,
-    "IS NOT": 3,
-    "IS DISTINCT FROM": 3,
-    "IS NOT DISTINCT FROM": 3,
-    "AND": 1,
-    "OR": 0,
-}
+    @classmethod
+    def default(cls):
+        return cls(OPS)
 
-POSTFIX_OPS = {
-    "ISNULL": 3,
-    "NOTNULL": 3,
-    "NOT NULL": 3,
-}
+    def get_ops(self, fix: FixType, min_precedence: int = -1):
+        for op in self.ops:
+            if op.fix == fix and op.sql_precedence > min_precedence:
+                yield op
 
+    def get(self, sql_name : str):
+        for op in self.ops:
+            if op.sql_name == sql_name:
+                return op
+        raise LookupError()
 
-@dataclasses.dataclass
-class PostfixOp(Expr):
-    left: Expr
-    precedence: int
-    operator: str
+    def get_prec(self, sql_name: str):
+        for op in self.ops:
+            if op.sql_name == sql_name:
+                return op.sql_precedence
+        raise LookupError()
 
-    def __sql__(self):
-        l = with_brackets(self.left, self.precedence)
-        return f"{l} {self.operator}"
+    def create(self, sql_name: str, *args):
+        return OpInstance(self.get(sql_name), *args)
+
+OPS = [
+    Op("NOT", "~", operator.not_, 2, "prefix", [bool], bool),
+    # Op('~', '~', ?, 11)
+    Op("+", "+", operator.pos, 11, "prefix", [Number], Number),
+    Op("-", "-", operator.neg, 11, "prefix", [Number], Number),
+    # "||": 9,
+    # "->": 9,
+    # "->>": 9,
+    Op("*", "*", operator.mul, 8, "infix", [Number, Number], Number),
+    Op("/", "/", operator.truediv, 8, "infix", [Number, Number], Number),
+    Op("%", "%", operator.mod, 8, "infix", [Number, Number], Number),
+    Op("+", "+", operator.add, 7, "infix", [Number, Number], Number),
+    Op("-", "-", operator.sub, 7, "infix", [Number, Number], Number),
+    Op("&", "&", operator.and_, 6, "infix", [Number, Number], Number),
+    Op("|", "|", operator.or_, 6, "infix", [Number, Number], Number),
+    Op("<<", "<<", operator.lshift, 6, "infix", [Number, Number], Number),
+    Op(">>", ">>", operator.rshift, 6, "infix", [Number, Number], Number),
+    Op("<", "<", operator.lt, 4, "infix", [Number, Number], bool),
+    Op(">", ">", operator.gt, 4, "infix", [Number, Number], bool),
+    Op("<=", "<=", operator.le, 4, "infix", [Number, Number], bool),
+    Op(">=", ">=", operator.ge, 4, "infix", [Number, Number], bool),
+    Op("=", "=", operator.eq, 3, "infix", [Any, Any], bool),
+    Op("==", "==", operator.eq, 3, "infix", [Any, Any], bool),
+    Op("!=", "!=", operator.ne, 3, "infix", [Any, Any], bool),
+    Op("<>", "<>", operator.ne, 3, "infix", [Any, Any], bool),
+    Op("IS", "is", operator.is_, 3, "infix", [Any, Any], bool),
+    Op("IS NOT", "is not", operator.is_not, 3, "infix", [Any, Any], bool),
+    # Op('IS DISTINCT FROM', 'is_distinct_from', operator.is_not, 3, "infix", [Any, Any], bool),
+    # Op('IS NOT DISTINCT FROM', 'is_not_distinct_from', operator.is_not, 3, "infix", [Any, Any], bool),
+    Op("AND", "&", operator.and_, 1, "infix", [bool, bool], bool),
+    Op("OR", "|", operator.or_, 1, "infix", [bool, bool], bool),
+    Op("ISNULL", None, lambda x: x is None, 3, "postfix", [Any], bool),
+    Op("NOT NULL", None, lambda x: x is not None, 3, "postfix", [Any], bool),
+    Op("NOTNULL", None, lambda x: x is not None, 3, "postfix", [Any], bool),
+]
+
 
 
 def parse_atom(p: ParseState) -> Expr:
@@ -336,6 +429,14 @@ class PrecedenceError(Exception):
 class ExprTuple(Expr):
     items: list[Expr]
 
+    @classmethod
+    def __parse__(cls, p: ParseState):
+        items = p.parse(BracketList[Expr])
+        return cls(items=items)
+
+    def __sql__(self):
+        return f"({', '.join(sql(x) for x in self.items)})"
+
 
 def parse_expr(p: ParseState, l_prec: int = 0) -> Expr:
     if p.try_take("("):
@@ -353,10 +454,10 @@ def parse_expr(p: ParseState, l_prec: int = 0) -> Expr:
         raise NotImplementedError()
     if p.try_take("CASE"):
         raise NotImplementedError()
-    for prefix_op, prec in PREFIX_OPS.items():
-        if p.try_take(prefix_op):
-            right = parse_expr(p, prec)
-            return PrefixOp(right, prec, prefix_op)
+    for op in OpRegistry.current().get_ops("prefix", l_prec):
+        if op.try_parse(p):
+            right = parse_expr(p, op.sql_precedence)
+            return OpInstance(op, right)
     # [todo] function name
     #
     item = parse_atom(p)
@@ -369,18 +470,14 @@ Globbie = tuple[O[L["NOT"]], L["GLOB", "REGEXP", "MATCH", "LIKE"]]
 def parse_op(p: ParseState, left, l_prec: int) -> Expr:
     if p.can_take(")"):
         return left
-    for binary_op, prec in BINARY_OPS.items():
-        if l_prec > prec:
-            continue
-        if p.try_take(binary_op):
-            right = parse_expr(p, prec)
-            return InfixOp(left, right, prec, binary_op)
-    for postfix_op, prec in POSTFIX_OPS.items():
-        if l_prec > prec:
-            continue
-        if p.try_take(postfix_op):
-            return PostfixOp(left, prec, postfix_op)
-    if p.try_take("COLLATE"):
+    for op in OpRegistry.current().get_ops('infix', l_prec)
+        if op.try_parse(p):
+            right = parse_expr(p, op.sql_precedence)
+            return OpInstance(op, left, right)
+    for op in OpRegistry.current().get_ops('postfix', l_prec)
+        if op.try_parse(p):
+            return OpInstance(op, left)
+    if p.try_take("COLLATE", case_sensitive=False):
         raise NotImplementedError()
     if p.try_parse(Globbie):
         raise NotImplementedError()
@@ -389,9 +486,11 @@ def parse_op(p: ParseState, left, l_prec: int) -> Expr:
     return left
 
 
-@dataclasses.dataclass
 class Identifier(Expr):
     parts: list[str]
+
+    def __init__(self, parts: list[str]):
+        self.parts = parts
 
     def __sql__(self):
         return ".".join(self.parts)
@@ -434,7 +533,7 @@ class BracketList(Generic[T], list[T]):
 sql.register(BracketList)(BracketList.__sql__)
 
 
-@sql_expr
+@sql_clause
 class CommonTableExpr:
     table_name: str
     columns: O[BracketList[str]]
@@ -446,7 +545,7 @@ class CommonTableExpr:
 CompoundOperator = L["UNION", "UNION ALL", "INTERSECT", "EXCEPT"]
 
 
-@sql_expr
+@sql_clause
 class WithRecClause:
     _kw: L["WITH"]
     rec: O[L["RECURSIVE"]]
@@ -477,26 +576,26 @@ JoinOp = U[
 JoinConstraint = None | tuple[L["ON"], Expr] | tuple[L["USING"], BracketList[str]]
 
 
-@sql_expr
+@sql_clause
 class JoinClause:
     table: "TableOrSubquery"
     joins: list[tuple[JoinOp, "TableOrSubquery", JoinConstraint]]
 
 
-@sql_expr
+@sql_clause
 class TableSelector:
     table_name: Identifier
     alias: None | Alias
 
 
-@sql_expr
+@sql_clause
 class TableFunctionApp:
     table_function_name: str
     args: BracketList[Expr]
     alias: None | Alias
 
 
-@sql_expr
+@sql_clause
 class NestedSelectStatement:
     smt: Bracket["SelectStatement"]
     alias: None | Alias
@@ -507,7 +606,7 @@ TableOrSubquery = U[
 ]
 
 
-@sql_expr
+@sql_clause
 class OrderingTerm:
     _kw: L["ORDER BY"]
     expr: Expr
@@ -516,7 +615,7 @@ class OrderingTerm:
     nullage: None | L["NULLS FIRST", "NULLS LAST"]
 
 
-@sql_expr
+@sql_clause
 class WindowDefn:
     base_window_name: None | str
     partition_by_clause: None | tuple[L["PARTITION BY"], list[Expr]]
@@ -524,7 +623,7 @@ class WindowDefn:
     frame_spec: None | str
 
 
-@sql_expr
+@sql_clause
 class WindowClause:
     _kw: L["WINDOW"]
     windows: list[tuple[str, L["AS"], Bracket["WindowDefn"]]]
@@ -534,7 +633,7 @@ FromClause = tuple[L["FROM"], JoinClause | list[TableOrSubquery]]
 WhereClause = tuple[L["WHERE"], Expr]
 
 
-@sql_expr
+@sql_clause
 class SelectCore:
     _kw: L["SELECT"]
     smode: O[L["DISTINCT", "ALL"]]
@@ -551,14 +650,14 @@ class SelectValues:
     values: list[BracketList[Expr]]
 
 
-@sql_expr
+@sql_clause
 class LimitClause:
     _kw: L["LIMIT"]
     limit: Expr
     mode: O[tuple[L[",", "OFFSET"], Expr]]
 
 
-@sql_expr
+@sql_clause
 class SelectStatement:
     with_rec: O[WithRecClause]
     core: SelectCore | SelectValues
@@ -574,20 +673,20 @@ InsertOrClause = tuple[L["OR"], L["ABORT", "FAIL", "IGNORE", "REPLACE", "ROLLBAC
 Setters = list[tuple[U[Identifier, BracketList[Identifier]], L["="], Expr]]
 
 
-@sql_expr
+@sql_clause
 class ConflictTarget:
     columns: BracketList[Identifier]
     where_clause: O[WhereClause]
 
 
-@sql_expr
+@sql_clause
 class ConflictUpdate:
     _kw: L["UPDATE SET"]
     setters: Setters
     where_clause: None | tuple[L["WHERE"], Expr]
 
 
-@sql_expr
+@sql_clause
 class UpsertClause:
     _kw: L["ON CONFLICT"]
     target: O[ConflictTarget]
@@ -595,20 +694,20 @@ class UpsertClause:
     update: L["NOTHING"] | ConflictUpdate
 
 
-@sql_expr
+@sql_clause
 class InsertValues:
     _kw: L["VALUES"]
     values: list[BracketList[Expr]]
     upsert: O[UpsertClause]
 
 
-@sql_expr
+@sql_clause
 class InsertSelect:
     smt: SelectStatement
     upsert: O[UpsertClause]
 
 
-@sql_expr
+@sql_clause
 class InsertStatement:
     with_rec: O[WithRecClause]
     kw: tuple[L["INSERT"], O[InsertOrClause]] | L["REPLACE"]
@@ -620,14 +719,14 @@ class InsertStatement:
     returning_clause: None | ReturningClause
 
 
-@sql_expr
+@sql_clause
 class QualifiedTableName:
     name: Identifier
     alias: None | Alias
     index: None | tuple[L["INDEXED BY"], Identifier] | tuple[L["NOT INDEXED"]]
 
 
-@sql_expr
+@sql_clause
 class UpdateStatement:
     with_rec: O[WithRecClause]
     _update: L["UPDATE"]
@@ -640,7 +739,7 @@ class UpdateStatement:
     returning_clause: None | ReturningClause
 
 
-@sql_expr
+@sql_clause
 class DeleteStatement:
     with_rec: O[WithRecClause]
     _delete: L["DELETE FROM"]
@@ -649,7 +748,7 @@ class DeleteStatement:
     returning_clause: None | ReturningClause
 
 
-@sql_expr
+@sql_clause
 class TypeName:
     name: list[str]
     number: O[Bracket[int | tuple[int, L[","], int]]]
@@ -661,15 +760,15 @@ ConflictClause = tuple[
 ]
 
 
-@sql_expr
-class PrimaryKeyConstraint:
+@sql_clause
+class PrimaryKeyColumnConstraint:
     _kw: L["PRIMARY KEY"]
     ascdesc: O[L["ASC", "DESC"]]
     conflict_clause: O[ConflictClause]
     autoincrement: O[L["AUTOINCREMENT"]]
 
 
-@sql_expr
+@sql_clause
 class GeneratedConstraint:
     _ga: O[L["GENERATED ALWAYS"]]
     _as: L["AS"]
@@ -677,21 +776,21 @@ class GeneratedConstraint:
     storage: O[L["STORED", "VIRTUAL"]]
 
 
-@sql_expr
+@sql_clause
 class FKAction:
     _on: L["ON"]
     updel: L["DELETE", "UPDATE"]
     action: L["SET NULL", "SET DEFAULT", "CASCADE", "RESTRICT", "NO ACTION"]
 
 
-@sql_expr
+@sql_clause
 class FKDefer:
     deferrable: L["DEFERRABLE", "NOT DEFERRABLE"]
     init: O[L["INITIALLY DEFERRED", "INITIALLY IMMEDIATE"]]
 
 
-@sql_expr
-class ForeignKeyConstraint:
+@sql_clause
+class ForeignKeyClause:
     _ref: L["REFERENCES"]
     table_name: Identifier
     columns: O[BracketList[Identifier]]
@@ -699,30 +798,92 @@ class ForeignKeyConstraint:
     defer: O[FKDefer]
 
 
+CheckConstraint = tuple[L["CHECK"], Bracket[Expr]]
+
 ColumnConstraint = (
-    PrimaryKeyConstraint
+    PrimaryKeyColumnConstraint
     | tuple[L["NOT NULL", "UNIQUE"], O[ConflictClause]]
-    | tuple[L["CHECK"], Bracket[Expr]]
+    | CheckConstraint
     | tuple[L["DEFAULT"], Bracket[Expr] | IntLiteral | QuotedString]
     | tuple[L["COLLATE"], str]
+    | ForeignKeyClause
     | GeneratedConstraint
 )
 
 
-@sql_expr
+@sql_clause
+class IndexedColumn:
+    name: Identifier | Expr
+    collate: O[tuple[L["COLLATE"], str]]
+    asc: O[L["ASC", "DESC"]]
+
+
+@sql_clause
+class KeyTableConstraint:
+    kw: L["PRIMARY KEY", "UNIQUE"]
+    columns: BracketList[IndexedColumn]
+    conflict_clause: O[ConflictClause]
+
+
+TableConstraint = (
+    KeyTableConstraint
+    | CheckConstraint
+    | tuple[L["FOREIGN KEY"], BracketList[Identifier], ForeignKeyClause]
+)
+
+
+@sql_clause
 class ColumnDef:
     name: str
     type: O[TypeName]
     constraints: O[list[ColumnConstraint]]
 
 
-@sql_expr
+@sql_clause
+class ColumnsDef:
+    columns: list[ColumnDef]
+    constraints: list[TableConstraint]
+
+    def __sql__(self):
+        l1 = ", ".join(map(sql, self.columns))
+        if len(self.constraints) > 0:
+            l2 = ", ".join(map(sql, self.constraints))
+            return f"({l1}, {l2})"
+        else:
+            return f"({l1})"
+
+    @classmethod
+    def __parse__(cls, p: ParseState):
+        # this needs a lookahead parser because you don't know whether you are
+        # doing constraints until after comma.
+        columns = []
+        constraints = []
+        tckw = ["CONSTRAINT", "PRIMARY", "UNIQUE", "CHECK", "FOREIGN"]
+        p.take("(")
+        columns.append(p.parse(ColumnDef))
+        while True:
+            if p.try_take(")"):
+                return cls(columns, constraints)
+            if p.can_take(*tckw):
+                break
+            columns.append(p.parse(ColumnDef))
+        while True:
+            if p.try_take(")"):
+                return cls(columns, constraints)
+            constraints.append(p.parse(TableConstraint))
+
+
+@sql_clause
 class CreateTableStatement:
     _create: L["CREATE"]
     temp: O[L["TEMP", "TEMPORARY"]]
     _table: L["TABLE"]
     if_not_exists: O[L["IF NOT EXISTS"]]
     table_name: Identifier
+    columns: ColumnsDef
+    options: O[list[L["WITHOUT ROWID", "STRICT"]]]
+
+    # [todo] AS (select statement) branch
 
 
 def parse_statement(p: ParseState):

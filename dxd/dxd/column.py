@@ -11,7 +11,8 @@ from typing import (
 )
 from .engine import engine_context
 from miniscutil.ofdict import MyJsonEncoder, TypedJsonDecoder
-from .expr import Expr, AbstractExpr
+from .q import Expr, Identifier
+from .parser import is_word
 
 logger = logging.getLogger("dxd")
 
@@ -19,9 +20,11 @@ S = TypeVar("S")
 R = TypeVar("R")
 
 
-class Column(AbstractExpr):
+class Column(Identifier):
     field: Field
+    """The dataclass field that this column represents."""
     schema: Type  # : Schema # cyclic reference
+    """The schema type that we are a field of."""
 
     @property
     def name(self) -> str:
@@ -54,6 +57,11 @@ class Column(AbstractExpr):
         r = engine_context.get().restore(self.type, sql_value)
         return r
 
+    def __sql__(self):
+        # [todo] add some logic here to check if the name is ambiguous
+        assert is_word(self.name)
+        return self.name
+
     @property
     def template(self) -> str:
         """Convert to an Expr template."""
@@ -82,7 +90,7 @@ class Column(AbstractExpr):
         return s
 
     def __repr__(self):
-        return f"{self.schema.__name__}.{self.name}"
+        return f"{self.schema.__qualname__}.{self.name}"
 
     def __hash__(self):
         return hash((self.schema.__name__, self.name))
