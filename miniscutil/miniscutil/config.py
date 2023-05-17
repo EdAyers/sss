@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 import sys
@@ -12,7 +13,7 @@ from pydantic import BaseSettings, Field, SecretStr
 
 """ Helpers for working with projects, config files etc. """
 
-logger = logging.getLogger("miniscutil.config")
+logger = logging.getLogger(__name__)
 
 
 def get_git_root(cwd: Optional[Path] = None) -> Optional[Path]:
@@ -75,6 +76,7 @@ def get_workspace_dir(cwd=None) -> Optional[Path]:
     return None
 
 
+@functools.cache
 def get_app_config_dir(app_name: str) -> Path:
     """Get the path to the application directory.
 
@@ -90,10 +92,15 @@ def get_app_config_dir(app_name: str) -> Path:
     else:
         p = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config"))
     p = p.expanduser().resolve() / app_name
-    p.mkdir(exist_ok=True)
+    # [todo] handle permissions errors
+    try:
+        p.mkdir(exist_ok=True)
+    except Exception:
+        logger.exception(f"Couldn't create app config dir {p}")
     return p
 
 
+@functools.cache
 def get_app_cache_dir(app_name: str) -> Path:
     """Returns the path that ths OS wants you to use to place application-specific caching files."""
     if sys.platform == "win32":
@@ -108,7 +115,11 @@ def get_app_cache_dir(app_name: str) -> Path:
         )
         p = Path(tempfile.gettempdir())
     p = p.expanduser().resolve() / app_name
-    p.mkdir(exist_ok=True)
+    # [todo] handle permissions errors
+    try:
+        p.mkdir(exist_ok=True)
+    except Exception:
+        logger.exception(f"Couldn't create app cache dir {p}")
     return p
 
 
@@ -222,6 +233,7 @@ class SecretPersist:
             "is_secret", False
         ), "please add the 'is_secret=True' kwarg to Field constructor"
         cfg = getattr(self, "__config__")
+        # [todo] user might not have permissions to set file
         secrets_file = getattr(self, "secrets_file")
         secret_postfix = getattr(cfg, "secret_postfix", None)
         if secret_postfix is None:
