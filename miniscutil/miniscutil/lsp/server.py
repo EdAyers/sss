@@ -1,10 +1,10 @@
 import logging
 from .types import InitializeParams, InitializeResult, PeerInfo, ServerCapabilities
-from uxu.rpc import RpcServer, InitializationMode, rpc_method
+from miniscutil.rpc import RpcServer, InitializationMode, rpc_method
 
 """ Implementation of an LSP server """
 
-logger = logging.getLogger("uxu.lsp")
+logger = logging.getLogger("LSP")
 
 
 class LspServer(RpcServer):

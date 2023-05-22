@@ -284,7 +284,7 @@ class RpcServer:
     ):
         if not isinstance(transport, Transport):
             raise TypeError(
-                f"transport must be an instance of uxu.rpc.Transport, not {type(transport)}"
+                f"transport must be an instance of {Transport.__module__}.Transport, not {type(transport)}"
             )
         global server_count
         server_count += 1

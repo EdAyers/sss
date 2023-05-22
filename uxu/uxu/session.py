@@ -2,10 +2,11 @@ import asyncio
 import logging
 from typing import Any, Optional
 from pydantic import BaseModel
-from uxu.lsp.types import PeerInfo
+
+from miniscutil.lsp import PeerInfo
+from miniscutil.rpc import rpc_method, RpcServer, Transport, InitializationMode
+
 from uxu.manager import Manager, EventArgs
-from uxu.rpc import rpc_method, RpcServer, Transport
-from uxu.rpc.jsonrpc import InitializationMode
 from uxu.vdom import Html
 from uxu.__about__ import __version__
 
