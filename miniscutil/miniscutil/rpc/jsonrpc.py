@@ -5,7 +5,17 @@ from dataclasses import MISSING, asdict, dataclass, field, is_dataclass
 from enum import Enum
 import logging
 import sys
-from typing import Any, Awaitable, Dict, List, Optional, Union, Coroutine
+from typing import (
+    Any,
+    Awaitable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+    Coroutine,
+)
 import inspect
 import warnings
 
@@ -218,6 +228,8 @@ class ExitNotification(Exception):
 
 
 def rpc_method(name: Optional[str] = None):
+    """Decorate your method with this to say that you are implementing a JSON-RPC method."""
+
     def decorator(fn):
         setattr(fn, "rpc_method", name or fn.__name__)
         return fn
@@ -226,6 +238,8 @@ def rpc_method(name: Optional[str] = None):
 
 
 def rpc_request(name: Optional[str] = None):
+    """Decorate your _stub_ method with this to have a client RPC."""
+
     def decorator(fn):
         assert asyncio.iscoroutinefunction(fn)
         fn_name = name or fn.__name__
@@ -268,9 +282,9 @@ class RpcServer:
     name: str
     request_counter: int
     """ Unique id for each request I make to the peer. """
-    my_requests: Dict[RequestId, Future[Any]]
+    my_requests: dict[RequestId, Future[Any]]
     """ Requests that I have made to my peer. """
-    their_requests: Dict[RequestId, Task]
+    their_requests: dict[RequestId, Task]
     """ Requests that my peer has made to me. """
     notification_tasks: set[asyncio.Task]
     """ Tasks running from notifications that my peer has sent to me. """
@@ -338,6 +352,11 @@ class RpcServer:
         id = self.request_counter
         req = Request(method=method, id=id, params=params)
         fut = asyncio.get_running_loop().create_future()
+        # [todo] I think the pythonic way to do this is to have this dict be a weakref, and the
+        # caller is responsible for holding the request object.
+        # If the request future is disposed then we send a cancel request to client.
+        if id in self.my_requests:
+            raise RuntimeError(f"non-unique request id {id} found")
         self.my_requests[id] = fut
         await self.send(req)
         result = await fut
@@ -354,8 +373,6 @@ class RpcServer:
         It will return when:
         - the transport closes gracefully
         - the exit notification is received.
-
-        [todo] add param for initialise message to send _or_ flag indicating an initialisation message is expected first.
 
         Raises:
             - TransportClosedError:the transport closes with an error
@@ -447,6 +464,8 @@ class RpcServer:
             )
             id = req.id
             if id is not None:
+                if id in self.their_requests:
+                    raise invalid_request(f"request id {id} is already in use")
                 self.their_requests[id] = task
                 task.add_done_callback(lambda _: self.their_requests.pop(id))
             else:
