@@ -1,10 +1,12 @@
 from collections import ChainMap
+from contextlib import contextmanager
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from functools import singledispatch
 import inspect
 import json
+from contextvars import ContextVar
 from pathlib import Path
 from typing import (
     Any,
@@ -21,6 +23,7 @@ from typing import (
     get_origin,
 )
 import logging
+from miniscutil.misc import map_ctx
 
 from pydantic import ValidationError
 from .dispatch import classdispatch
@@ -62,10 +65,34 @@ def ofdict_dataclass(A: Type[T], a: JsonLike) -> T:
         else:
             v = a[k]
         if f.type is not None:
-            d2[k] = ofdict(f.type, v)
+            with dpath(k):
+                d2[k] = ofdict(f.type, v)
         else:
             d2[k] = v
     return A(**d2)  # type: ignore
+
+
+ofdict_context: ContextVar[list[str]] = ContextVar("ofdict_context", default=[])
+
+
+def atstr():
+    p = ofdict_context.get()
+    if len(p) == 0:
+        return ""
+    else:
+        s = ".".join(p)
+        return f" at {s}"
+
+
+@contextmanager
+def dpath(coord: str):
+    with map_ctx(ofdict_context, lambda x: x + [coord]) as p:
+        yield p
+
+
+class OfDictError(TypeError):
+    def __init__(self, msg: str):
+        super().__init__(msg + atstr())
 
 
 @classdispatch
@@ -92,15 +119,15 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         class_key = getattr(A, "_class_key", "__class__")
         ct = getattr(A, "_class_table", None)
         if ct is None:
-            raise TypeError(f"failed to find class table for {A}")
+            raise OfDictError(f"failed to find class table for {A}")
         assert isinstance(a, dict)
         C: Optional[type] = a.get(class_key, None)
         if C is None:
-            raise TypeError(
-                f"ofdict for a subclass of 'OfDictUnion' must include a '{class_key}' key."
+            raise OfDictError(
+                f"ofdict for a subclass of 'OfDictUnion' must include a '{class_key}' key"
             )
         if not issubclass(C, A):
-            raise TypeError(f"Expected {C} to be a subclass of {A}")
+            raise OfDictError(f"Expected {C} to be a subclass of {A}")
         A = C  # type: ignore
 
     if A is Any:
@@ -136,19 +163,21 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         if isinstance(a, A):
             return a  # type: ignore
         else:
-            raise TypeError(f"Expected an {A} but was {type(a)}")
+            raise OfDictError(
+                f"Expected a {A.__name__} but was {type(a).__name__}: {a}"
+            )
     try:
         if isinstance(a, A):
             return a  # type: ignore
     except TypeError:
         pass
-    raise NotImplementedError(f"No implementation of ofdict for {A}.")
+    raise NotImplementedError(f"No implementation of ofdict for {A.__name__}.")
 
 
 @ofdict.register(list)
 def _list_ofdict(A, a):
     if not isinstance(a, list):
-        raise TypeError(f"Expected a list but got a {type(a)}")
+        raise OfDictError(f"Expected a list but got a {type(a)}")
     X = as_list(A)
     if X is not None:
         return [ofdict(X, y) for y in a]
@@ -159,7 +188,7 @@ def _list_ofdict(A, a):
 @ofdict.register(set)
 def _set_ofdict(A, a):
     if not isinstance(a, list):
-        raise TypeError(f"Expected a list but got a {type(a)}")
+        raise OfDictError(f"Expected a list but got a {type(a)}")
     X = as_set(A)
     if X is not None:
         return set(ofdict(X, y) for y in a)
@@ -170,12 +199,18 @@ def _set_ofdict(A, a):
 @ofdict.register(dict)
 def _dict_ofdict(A, a):
     if not isinstance(a, dict):
-        raise TypeError(f"Expected a {A} but got {type(a)}")
+        raise OfDictError(f"Expected a {A} but got {type(a)}")
     o = get_origin(A)
     if o is None:
         return a
     K, V = get_args(A)
-    return o({ofdict(K, k): ofdict(V, v) for k, v in a.items()})
+    d = {}
+    for k, v in a.items():
+        with dpath(str(k)):
+            vk = ofdict(K, k)
+            vv = ofdict(V, v)
+            d[vk] = vv
+    return o(d)
 
 
 @ofdict.register(Enum)
