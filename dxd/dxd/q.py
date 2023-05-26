@@ -9,7 +9,8 @@ from typing import (
     TypeVar,
     Type,
     Callable,
-    ClassVar, TypeAlias
+    ClassVar,
+    TypeAlias,
 )
 from enum import Enum
 from miniscutil.type_util import as_optional, as_literal
@@ -26,7 +27,7 @@ from dxd.parser import ParseState, run_parser, is_word, tokenize
 from miniscutil.type_util import is_optional, as_literal
 import logging
 from contextvars import ContextVar
-from miniscutil.misc import onectx, interlace
+from miniscutil.misc import onectx, interlace, newctx
 from miniscutil import Current
 from collections import Counter
 import operator
@@ -36,19 +37,28 @@ logger = logging.getLogger("dxd")
 
 T = TypeVar("T")
 
+# [todo] placeholder ctx should live on parse state: can be backtracked.
+
 
 class PlaceholderContext:
     args: list[Any]
     kwargs: dict[str, Any]
     names: Counter[str]
 
-    def __init__(self):
-        self.args = []
-        self.kwargs = {}
+    def __init__(self, args=None, kwargs=None):
+        self.args = args or []
+        self.kwargs = kwargs or {}
         self.names = Counter()
 
     def add_arg(self, x: Any):
         self.args.append(x)
+
+    def pop_arg(self):
+        assert len(self.args) > 0
+        return self.args.pop(0)
+
+    def get_kwarg(self, k):
+        return self.kwargs[k]
 
     def add_kwarg(self, k: str, v: Any):
         # [todo] better detection for injections
@@ -64,17 +74,34 @@ class PlaceholderContext:
         self.kwargs[k] = v
         return k
 
+    def __enter__(self):
+        if ph_ctx.get(None) is not None:
+            raise RuntimeError("PlaceholderContext already active")
+        assert not hasattr(self, "_token")
+        self._token = ph_ctx.set(self)
+        return self
+
+    def __exit__(self, *args):
+        assert hasattr(self, "_token")
+        ph_ctx.reset(self._token)
+        del self._token
+
 
 ph_ctx: ContextVar[PlaceholderContext] = ContextVar("ph_ctx")
 
 
+def parse_sql(t: Type[T], input: str, *placeholder_args, **placeholder_kwargs) -> T:
+    pc = PlaceholderContext(placeholder_args, placeholder_kwargs)
+    with newctx(ph_ctx, pc):
+        result = run_parser(t, input)
+    assert len(pc.args) == 0, f"Unused placeholder args: {pc.args}"
+    return result
+
+
 @functools.singledispatch
-def sql(x: Any):
+def sql(x: Any) -> str:
     """Converts your object to a SQL string."""
     with onectx(ph_ctx, PlaceholderContext):
-        c = ph_ctx.get()
-        if c is None:
-            t = ph_ctx.set(PlaceholderContext())
         if hasattr(x, "__sql__"):
             return x.__sql__()
         raise NotImplementedError(f"Cannot sql {x}")
@@ -109,11 +136,26 @@ def _sql_int(x: int):
     return str(x)
 
 
-@dataclass_transform()
+@dataclasses.dataclass
+class SqlClauseField:
+    name: str
+    type: Type
+    default: Any = dataclasses.MISSING
+    default_factory: Any = dataclasses.MISSING
+
+
+@dataclass_transform(kw_only_default=True)
 def sql_clause(cls: Type[T]) -> Type[T]:
     ParseState.type_registry[cls.__name__] = cls
-    cls = dataclasses.dataclass(cls)
-    fields = dataclasses.fields(cls)
+    cls_annotations = cls.__dict__.get("__annotations__", {})
+    fields = []
+    for name, type in cls_annotations.items():
+        if typing.get_origin(type) is ClassVar:
+            continue
+        default = getattr(cls, name, dataclasses.MISSING)
+        if isinstance(default, dataclasses.Field):
+            raise NotImplementedError("field objects not supported yet")
+        fields.append(SqlClauseField(name, type, default, dataclasses.MISSING))
 
     for f in fields:
         if (
@@ -129,23 +171,24 @@ def sql_clause(cls: Type[T]) -> Type[T]:
                     f.default = x
                     setattr(cls, f.name, f.default)
 
-    # def init(self, *args, **kwargs):
-    #     n = len(args)
-    #     assert n <= len(fields)
-    #     for i in range(n):
-    #         setattr(self, fields[i].name, args[i])
-    #     rest = fields[n:]
-    #     for field in rest:
-    #         v = kwargs.pop(field.name, field.default)
-    #         if v is dataclasses.MISSING:
-    #             raise ValueError(f"missing required argument {field.name}")
-    #         # [todo] assert right type
-    #         setattr(self, field.name, v)
-    #     assert len(kwargs) == 0
-    # setattr(cls, "__init__", init)
+    def init(self, *args, **kwargs):
+        n = len(args)
+        assert n <= len(fields)
+        for i in range(n):
+            setattr(self, fields[i].name, args[i])
+        rest = fields[n:]
+        for field in rest:
+            v = kwargs.pop(field.name, field.default)
+            if v is dataclasses.MISSING:
+                raise ValueError(f"missing required argument {field.name}")
+            # [todo] assert right type
+            setattr(self, field.name, v)
+        assert len(kwargs) == 0
+
+    setattr(cls, "__init__", init)
 
     def __parse__(cls, p: ParseState):
-        types = [f.type for f in dataclasses.fields(cls)]
+        types = [f.type for f in fields]
         vs = p.parse(tuple[(*types,)])  # type: ignore
         return cls(*vs)
 
@@ -153,7 +196,10 @@ def sql_clause(cls: Type[T]) -> Type[T]:
         acc = []
         for field in fields:
             v = getattr(self, field.name)
-            if v is not None:
+            if typing.get_origin(field.type) is L:
+                assert isinstance(v, str)
+                acc.append(str(v))
+            elif v is not None:
                 acc.append(sql(v))
         return " ".join(acc)
 
@@ -185,25 +231,25 @@ class Expr(ABC):
         raise NotImplementedError()
 
     def __add__(self, other):
-        return InfixOp(self, other, "+")
+        return OpRegistry.current().create("+", self, other)
 
     def __radd__(self, other):
-        return InfixOp(other, self, "+")
+        return OpRegistry.current().create("+", other, self)
 
     def __and__(self, other):
-        return InfixOp(self, other, "AND")
+        return OpRegistry.current().create("AND", self, other)
 
     def __or__(self, other):
-        return InfixOp(self, other, "OR")
+        return OpRegistry.current().create("OR", self, other)
 
     def __eq__(self, other):
-        return InfixOp(self, other, "==")
+        return OpRegistry.current().create("==", self, other)
 
     def __ne__(self, other):
-        return InfixOp(self, other, "!=")
+        return OpRegistry.current().create("!=", self, other)
 
     def __not__(self):
-        return PrefixOp(self, "NOT")
+        return OpRegistry.current().create("NOT", self)
 
     def __bool__(self):
         raise ValueError(
@@ -213,22 +259,28 @@ class Expr(ABC):
 
 @functools.singledispatch
 def expr(item: Any) -> Expr:
-    raise NotImplementedError(f"don't know how to make Expr of {type(item)}")
+    """Attempt to cast the given item to a SQL expression."""
+    return UnnamedPlaceholder(item)
 
 
 @expr.register(str)
 def _str_expr(item: str):
-    return QuotedString(item)
+    return UnnamedPlaceholder(item)
 
 
 @expr.register(int)
 def _int_expr(item: int):
-    return IntLiteral(item)
+    return UnnamedPlaceholder(item)
 
 
 @expr.register(Expr)
 def _expr_expr(item: Expr):
     return item
+
+
+@expr.register(Enum)
+def _expr_enum(item: Enum):
+    return UnnamedPlaceholder(item.value)
 
 
 @dataclasses.dataclass
@@ -245,7 +297,13 @@ class NamedPlaceholder(Expr):
         p.take(":")
         name = p.next()
         assert is_word(name)
-        return cls(name=name, value=dataclasses.MISSING)
+        value = dataclasses.MISSING
+        if pc := ph_ctx.get(None):
+            value = pc.get_kwarg(name)
+            if isinstance(value, Expr):
+                # [todo] should be isinstance(value, Sql)
+                return value
+        return cls(name=name, value=value)
 
 
 @dataclasses.dataclass
@@ -264,15 +322,18 @@ class UnnamedPlaceholder(Expr):
 
     @classmethod
     def __parse__(cls, p: ParseState):
-        p.take("?")
-        return cls(value=dataclasses.MISSING)
+        p.take("?")  # [todo] other placeholders
+        value = dataclasses.MISSING
+        if pc := ph_ctx.get(None):
+            value = pc.pop_arg()
+        return cls(value=value)
 
 
 class QuotedString(str, Expr):
     def __sql__(self):
         # [todo] use the sqlite quoting function
         # doesn't seem to be possible without using placeholders and executing?
-        return shlex.quote(self)
+        return shlex.quote(str(self))
 
     @classmethod
     def __parse__(cls, p: ParseState):
@@ -283,6 +344,11 @@ class QuotedString(str, Expr):
                 # [todo] unescaping?
                 return item.strip(q)
         raise ValueError(f"Expected quoted string, got {item}")
+
+
+@sql.register(QuotedString)
+def _quoted_string_sql(item: QuotedString):
+    return item.__sql__()
 
 
 class IntLiteral(int, Expr):
@@ -302,6 +368,8 @@ class IntLiteral(int, Expr):
         return sign * int(item)
 
 
+sql.register(IntLiteral, lambda x: x.__sql__())
+
 FixType = L["infix", "postfix", "prefix"]
 
 
@@ -315,7 +383,7 @@ class Op:
     arg_types: list[Type]
     return_type: Type
 
-    def try_parse(self, p : ParseState):
+    def try_parse(self, p: ParseState):
         return p.try_take(self.sql_name)
 
     def sql(self, args):
@@ -323,27 +391,28 @@ class Op:
         if self.fix == "infix":
             l, r = args
             return f"{l} {self.sql_name} {r}"
-        elif self.fix == "postfix"
-            l, = args
+        elif self.fix == "postfix":
+            (l,) = args
             return f"{l} {self.sql_name}"
         elif self.fix == "prefix":
-            r, = args
+            (r,) = args
             return f"{self.sql_name} {r}"
         else:
             raise NotImplementedError(self.fix)
 
 
 class OpInstance(Expr):
-    op : Op
-    args : list[Expr]
+    op: Op
+    args: list[Expr]
 
-    def __init__(self, op : Op, *args):
+    def __init__(self, op: Op, *args):
         self.op = op
         assert len(args) == len(op.arg_types)
         self.args = [expr(arg) for arg in args]
 
     def __sql__(self):
         return self.op.sql(self.args)
+
 
 class OpRegistry(Current):
     def __init__(self, ops: list[Op]):
@@ -358,7 +427,7 @@ class OpRegistry(Current):
             if op.fix == fix and op.sql_precedence > min_precedence:
                 yield op
 
-    def get(self, sql_name : str):
+    def get(self, sql_name: str):
         for op in self.ops:
             if op.sql_name == sql_name:
                 return op
@@ -371,7 +440,12 @@ class OpRegistry(Current):
         raise LookupError()
 
     def create(self, sql_name: str, *args):
+        if len(args) == 2:
+            ops = [x for x in self.get_ops("infix") if x.sql_name == sql_name]
+            assert len(ops) == 1
+            return OpInstance(ops[0], *args)
         return OpInstance(self.get(sql_name), *args)
+
 
 OPS = [
     Op("NOT", "~", operator.not_, 2, "prefix", [bool], bool),
@@ -408,7 +482,6 @@ OPS = [
     Op("NOT NULL", None, lambda x: x is not None, 3, "postfix", [Any], bool),
     Op("NOTNULL", None, lambda x: x is not None, 3, "postfix", [Any], bool),
 ]
-
 
 
 def parse_atom(p: ParseState) -> Expr:
@@ -470,11 +543,11 @@ Globbie = tuple[O[L["NOT"]], L["GLOB", "REGEXP", "MATCH", "LIKE"]]
 def parse_op(p: ParseState, left, l_prec: int) -> Expr:
     if p.can_take(")"):
         return left
-    for op in OpRegistry.current().get_ops('infix', l_prec)
+    for op in OpRegistry.current().get_ops("infix", l_prec):
         if op.try_parse(p):
             right = parse_expr(p, op.sql_precedence)
             return OpInstance(op, left, right)
-    for op in OpRegistry.current().get_ops('postfix', l_prec)
+    for op in OpRegistry.current().get_ops("postfix", l_prec):
         if op.try_parse(p):
             return OpInstance(left)
     if p.try_take("COLLATE", case_sensitive=False):
@@ -489,7 +562,10 @@ def parse_op(p: ParseState, left, l_prec: int) -> Expr:
 class Identifier(Expr):
     parts: list[str]
 
-    def __init__(self, parts: list[str]):
+    def __init__(self, parts: list[str] | str):
+        if isinstance(parts, str):
+            parts = parts.split(".")
+        assert all(map(is_word, parts))
         self.parts = parts
 
     def __sql__(self):
@@ -508,6 +584,9 @@ class Identifier(Expr):
 class Bracket(Generic[T]):
     item: T
 
+    def __init__(self, item: T):
+        self.item = item
+
     def __sql__(self):
         return f"({self.item})"
 
@@ -518,19 +597,23 @@ class Bracket(Generic[T]):
         p.take("(")
         x = p.parse(args[0])
         p.take(")")
-        return x
+        return cls(x)
 
 
 class BracketList(Generic[T], list[T]):
     def __sql__(self):
-        return f"({', '.join(map(str, self))})"
+        return f"({', '.join(map(sql, self))})"
 
     @classmethod
     def __parse__(cls, p: ParseState):
-        return Bracket[list[T]].__parse__(p)
+        T = typing.get_args(cls)[0]
+        item: Bracket[list] = p.parse(Bracket[list[T]])
+        return BracketList(item.item)
 
 
-sql.register(BracketList)(BracketList.__sql__)
+@sql.register(BracketList)
+def _sql_blist(x: BracketList):
+    return x.__sql__()
 
 
 @sql_clause
@@ -542,9 +625,6 @@ class CommonTableExpr:
     select: Bracket["SelectStatement"]
 
 
-CompoundOperator = L["UNION", "UNION ALL", "INTERSECT", "EXCEPT"]
-
-
 @sql_clause
 class WithRecClause:
     _kw: L["WITH"]
@@ -554,10 +634,13 @@ class WithRecClause:
 
 Alias = tuple[L["AS"], str]
 
-ResultColumn = U[
-    tuple[Expr, O[Alias]],
-    L["*"],
-]
+
+@sql_clause
+class AliasedExpr:
+    expr: Expr
+    _as: O[L["AS"]] = None
+    alias: O[Alias] = None
+
 
 JoinOp = U[
     L[","],
@@ -608,11 +691,10 @@ TableOrSubquery = U[
 
 @sql_clause
 class OrderingTerm:
-    _kw: L["ORDER BY"]
     expr: Expr
-    collate: None | tuple[L["COLLATE"], str]
-    dir: None | L["ASC", "DESC"]
-    nullage: None | L["NULLS FIRST", "NULLS LAST"]
+    collate: None | tuple[L["COLLATE"], str] = None
+    dir: None | L["ASC", "DESC"] = None
+    nullage: None | L["NULLS FIRST", "NULLS LAST"] = None
 
 
 @sql_clause
@@ -629,39 +711,48 @@ class WindowClause:
     windows: list[tuple[str, L["AS"], Bracket["WindowDefn"]]]
 
 
-FromClause = tuple[L["FROM"], JoinClause | list[TableOrSubquery]]
-WhereClause = tuple[L["WHERE"], Expr]
+@sql_clause
+class FromClause:
+    _kw: L["FROM"] = "FROM"
+    items: JoinClause | list[TableOrSubquery]
+
+    @classmethod
+    def of_table_name(cls, table_name: str):
+        ts = TableSelector(table_name=Identifier([table_name]), alias=None)
+        return cls(items=[ts])
+
 
 @sql_clause
 class WhereClause:
-    _where : L['WHERE']
+    _where: L["WHERE"]
     expr: Expr
 
     def __and__(self, other):
         other = expr(other)
-        return dataclasses.replace(self, expr= self.expr & other)
+        return dataclasses.replace(self, expr=self.expr & other)
 
     @classmethod
     def create(cls, e):
-        return cls(_where='WHERE', expr=expr(e))
+        return cls(_where="WHERE", expr=expr(e))
+
 
 @sql_clause
 class SelectCore:
-    _kw: L["SELECT"]
-    smode: O[L["DISTINCT", "ALL"]]
-    columns: list[ResultColumn]
-    from_clause: None | FromClause
-    where_clause: None | WhereClause
-    group_by_clause: None | tuple[L["GROUP BY"], list[Expr]]
-    having_clause: None | tuple[L["HAVING"], Expr]
-    window_clause: None | WindowClause
+    _kw: L["SELECT"] = "SELECT"
+    smode: O[L["DISTINCT", "ALL"]] = None
+    columns: L["*"] | list[AliasedExpr]
+    from_clause: None | FromClause = None
+    where_clause: None | WhereClause = None
+    group_by_clause: None | tuple[L["GROUP BY"], list[Expr]] = None
+    having_clause: None | tuple[L["HAVING"], Expr] = None
+    window_clause: None | WindowClause = None
 
     def add_where(self, e: Expr):
         e = expr(e)
         if self.where_clause is None:
             return dataclasses.replace(self, where_clause=WhereClause.create(e))
         else:
-            return dataclasses.replace(self, where_clause= self.where_clause & expr)
+            return dataclasses.replace(self, where_clause=self.where_clause & expr)
 
 
 class SelectValues:
@@ -671,24 +762,32 @@ class SelectValues:
 
 @sql_clause
 class LimitClause:
-    _kw: L["LIMIT"]
+    _kw: L["LIMIT"] = "LIMIT"
     limit: Expr
-    mode: O[tuple[L[",", "OFFSET"], Expr]]
+    mode: O[tuple[L[",", "OFFSET"], Expr]] = None
 
-CompoundOperator : TypeAlias = L["UNION", "UNION ALL", "INTERSECT", "EXCEPT"]
+
+CompoundOperator: TypeAlias = L["UNION", "UNION ALL", "INTERSECT", "EXCEPT"]
+
 
 @sql_clause
 class OrderByClause:
-    _kw : L["ORDER BY"]
-    terms : list[OrderingTerm]
+    _kw: L["ORDER BY"] = "ORDER BY"
+    terms: list[OrderingTerm]
 
-@dataclasses.dataclass
+
+@dataclasses.dataclass(kw_only=True)
 class SelectStatement:
-    with_rec: O[WithRecClause]
+    with_rec: O[WithRecClause] = None
     core: list[SelectCore | SelectValues]
-    compound_ops: list[CompoundOperator]
-    order_by_clause: None | OrderByClause
-    limit_clause: None | LimitClause
+    compound_ops: list[CompoundOperator] = dataclasses.field(default_factory=list)
+    order_by_clause: None | OrderByClause = None
+    limit_clause: None | LimitClause = None
+
+    @property
+    def is_simple(self):
+        """A select statement is simple if it has no compound operators."""
+        return len(self.compound_ops) == 0
 
     def __sql__(self):
         acc = []
@@ -705,7 +804,7 @@ class SelectStatement:
         return " ".join(acc)
 
     @classmethod
-    def __parse__(cls, p : ParseState):
+    def __parse__(cls, p: ParseState):
         with_rec = p.try_parse(WithRecClause)
         C = U[SelectCore, SelectValues]
         core = [p.parse(C)]
@@ -718,16 +817,32 @@ class SelectStatement:
             core.append(p.parse(C))
         order_by_clause = p.try_parse(OrderByClause)
         limit_clause = p.try_parse(LimitClause)
-        return cls(with_rec, core, compound_ops, order_by_clause, limit_clause)
+        return cls(
+            with_rec=with_rec,
+            core=core,
+            compound_ops=compound_ops,
+            order_by_clause=order_by_clause,
+            limit_clause=limit_clause,
+        )
 
 
+@sql_clause
+class ReturningClause:
+    _kw: L["RETURNING"] = "RETURNING"
+    items: L["*"] | list[AliasedExpr]
 
-ReturningItem = U[L["*"], tuple[Expr, O[tuple[O[L["AS"]], Identifier]]]]
-ReturningClause = tuple[L["RETURNING"], list[ReturningItem]]
 
 InsertOrClause = tuple[L["OR"], L["ABORT", "FAIL", "IGNORE", "REPLACE", "ROLLBACK"]]
 
-Setters = list[tuple[U[Identifier, BracketList[Identifier]], L["="], Expr]]
+
+@sql_clause
+class Setter:
+    col: Identifier | BracketList[Identifier]
+    _eq: L["="] = "="
+    value: Expr
+
+
+Setters = list[Setter]
 
 
 @sql_clause
@@ -745,17 +860,20 @@ class ConflictUpdate:
 
 @sql_clause
 class UpsertClause:
-    _kw: L["ON CONFLICT"]
-    target: O[ConflictTarget]
-    _do: L["DO"]
-    update: L["NOTHING"] | ConflictUpdate
+    _kw: L["ON CONFLICT"] = "ON CONFLICT"
+    target: O[ConflictTarget] = None
+    _do: L["DO"] = "DO"
+    update: L["NOTHING"] | ConflictUpdate = "NOTHING"
+
+
+ON_CONFLICT_DO_NOTHING = UpsertClause()
 
 
 @sql_clause
 class InsertValues:
-    _kw: L["VALUES"]
+    _kw: L["VALUES"] = "VALUES"
     values: list[BracketList[Expr]]
-    upsert: O[UpsertClause]
+    upsert: O[UpsertClause] = None
 
 
 @sql_clause
@@ -766,48 +884,48 @@ class InsertSelect:
 
 @sql_clause
 class InsertStatement:
-    with_rec: O[WithRecClause]
-    kw: tuple[L["INSERT"], O[InsertOrClause]] | L["REPLACE"]
-    _into: L["INTO"]
+    with_rec: O[WithRecClause] = None
+    kw: tuple[L["INSERT"], O[InsertOrClause]] | L["REPLACE"] = ("INSERT", None)
+    _into: L["INTO"] = "INTO"
     table_name: Identifier
-    table_alias: O[Alias]
-    columns: O[BracketList[Identifier]]
+    table_alias: O[Alias] = None
+    columns: O[BracketList[Identifier]] = None
     values: InsertValues | InsertSelect | L["DEFAULT VALUES"]
-    returning_clause: None | ReturningClause
+    returning_clause: None | ReturningClause = None
 
 
 @sql_clause
 class QualifiedTableName:
     name: Identifier
-    alias: None | Alias
-    index: None | tuple[L["INDEXED BY"], Identifier] | tuple[L["NOT INDEXED"]]
+    alias: None | Alias = None
+    index: None | tuple[L["INDEXED BY"], Identifier] | tuple[L["NOT INDEXED"]] = None
 
 
 @sql_clause
 class UpdateStatement:
-    with_rec: O[WithRecClause]
-    _update: L["UPDATE"]
-    or_clause: O[InsertOrClause]
+    with_rec: O[WithRecClause] = None
+    _update: L["UPDATE"] = "UPDATE"
+    or_clause: O[InsertOrClause] = None
     name: QualifiedTableName
-    _set: L["SET"]
+    _set: L["SET"] = "SET"
     setters: Setters
-    from_clause: FromClause
-    where_clause: None | WhereClause
-    returning_clause: None | ReturningClause
+    from_clause: FromClause | None = None
+    where_clause: None | WhereClause = None
+    returning_clause: None | ReturningClause = None
 
 
 @sql_clause
 class DeleteStatement:
-    with_rec: O[WithRecClause]
-    _delete: L["DELETE FROM"]
+    with_rec: O[WithRecClause] = None
+    _delete: L["DELETE FROM"] = "DELETE FROM"
     table_name: QualifiedTableName
-    where_clause: None | WhereClause
-    returning_clause: None | ReturningClause
+    where_clause: None | WhereClause = None
+    returning_clause: None | ReturningClause = None
 
 
 @sql_clause
 class TypeName:
-    name: list[str]
+    name: tuple[str, ...]
     number: O[Bracket[int | tuple[int, L[","], int]]]
 
 
@@ -888,12 +1006,42 @@ TableConstraint = (
     | tuple[L["FOREIGN KEY"], BracketList[Identifier], ForeignKeyClause]
 )
 
+TypeNameNumber: TypeAlias = O[Bracket[int | tuple[int, L[","], int]]]
+
 
 @sql_clause
 class ColumnDef:
     name: str
-    type: O[TypeName]
-    constraints: O[list[ColumnConstraint]]
+    type: tuple[str, ...] = ()
+    number: TypeNameNumber = None
+    constraints: tuple[ColumnConstraint, ...] = ()
+
+    @classmethod
+    def __parse__(cls, p: ParseState):
+        name = p.parse(str)
+        stopwords = [
+            "PRIMARY",
+            "NOT",
+            "UNIQUE",
+            "CHECK",
+            "DEFAULT",
+            "COLLATE",
+            "REFERENCES",
+            "GENERATED",
+            "AS",
+            ",",
+        ]
+        tns: list[str] = []
+        while True:
+            if p.can_take(*stopwords):
+                break
+            tns.append(p.parse(str))
+        if len(tns) > 0:
+            number = p.parse(TypeNameNumber)
+        else:
+            number = None
+        constraints = p.parse(tuple[ColumnConstraint, ...])
+        return cls(name=name, type=tuple(tns), number=number, constraints=constraints)
 
 
 @sql_clause
@@ -913,21 +1061,25 @@ class ColumnsDef:
     def __parse__(cls, p: ParseState):
         # this needs a lookahead parser because you don't know whether you are
         # doing constraints until after comma.
-        columns = []
-        constraints = []
+        columns: list[ColumnDef] = []
+        constraints: list[TableConstraint] = []
         tckw = ["CONSTRAINT", "PRIMARY", "UNIQUE", "CHECK", "FOREIGN"]
         p.take("(")
         columns.append(p.parse(ColumnDef))
         while True:
             if p.try_take(")"):
-                return cls(columns, constraints)
+                return cls(columns=columns, constraints=constraints)
+            p.take(",")
             if p.can_take(*tckw):
                 break
             columns.append(p.parse(ColumnDef))
+        constraints.append(p.parse(TableConstraint))
         while True:
             if p.try_take(")"):
-                return cls(columns, constraints)
+                break
+            p.take(",")
             constraints.append(p.parse(TableConstraint))
+        return cls(columns=columns, constraints=constraints)
 
 
 @sql_clause
@@ -943,17 +1095,38 @@ class CreateTableStatement:
     # [todo] AS (select statement) branch
 
 
-def parse_statement(p: ParseState):
-    s = p.parse(SelectStatement)
-    p.try_take(";")
-    return s
+Statement: TypeAlias = (
+    CreateTableStatement
+    | InsertStatement
+    | UpdateStatement
+    | SelectStatement
+    | DeleteStatement
+    # DropTableStatement
+)
 
 
-if __name__ == "__main__":
-    ps = ParseState("SELECT * FROM foo.cheese WHERE x = 3 + 2;")
-    x = parse_statement(ps)
-    print(x)
-    print(sql(x))
+def parse_statement(query: str, *args) -> Statement:
+    p = ParseState(query)
+    pc = PlaceholderContext(args)
+    with newctx(ph_ctx, pc):
+        s = p.parse(Statement)
+        p.try_take(";")
+        assert p.is_eof()
+        return s
+
+
+def parse_commands(query: str, *args, **kwargs):
+    p = ParseState(query)
+    pc = PlaceholderContext(args, kwargs)
+    statements = []
+    with newctx(ph_ctx, pc):
+        statements.append(p.parse(Statement))
+        while p.try_take(";"):
+            if p.is_eof():
+                break
+            statements.append(p.parse(Statement))
+    assert len(pc.args) == 0, f"Not all placeholders were bound: {pc.args}"
+    return statements
 
 
 """

@@ -25,6 +25,10 @@ class ParseError(RuntimeError):
     pass
 
 
+class _ParseSuccessError(RuntimeError):
+    pass
+
+
 class ParseState:
     type_registry: ClassVar[dict[str, Type]] = {}
     case_insensitive_literals = True
@@ -43,7 +47,7 @@ class ParseState:
 
     def take_word(self):
         item = self.next()
-        assert is_word(item)
+        assert is_word(item), f"Expected word, got {item}"
         return item
 
     def next(self):
@@ -95,7 +99,7 @@ class ParseState:
                     item = item.lower()
                 assert r == item
             return x
-        raise AssertionError(f"Expected {x}, got {item}")
+        raise AssertionError(f"Expected '{x}', got '{item}'")
 
     def can_take(self, *xs: str, case_sensitive=True) -> bool:
         """Returns true if the parser can successfully take at least one of the given strings."""
@@ -103,8 +107,10 @@ class ParseState:
             try:
                 with self.attempt():
                     self.take(x, case_sensitive=case_sensitive)
-                    return True
-            except:
+                    raise _ParseSuccessError()
+            except _ParseSuccessError:
+                return True
+            except Exception:
                 pass
         return False
 
@@ -130,6 +136,8 @@ class ParseState:
         if t is None or t is type(None):
             return None  # type: ignore
         Orig = typing.get_origin(t)
+        if hasattr(Orig, "__parse__"):
+            return Orig.__parse__.__func__(t, self)  # type: ignore
         args = typing.get_args(t)
         if Orig is typing.Literal:
             return self.take_one(args, case_sensitive=not self.case_insensitive_literals)  # type: ignore
@@ -142,7 +150,7 @@ class ParseState:
                 try:
                     with self.attempt():
                         return self.parse(arg)
-                except:
+                except Exception as e:
                     pass
             if None in args or type(None) in args:
                 return None  # type: ignore
@@ -163,10 +171,21 @@ class ParseState:
                     break
             return xs  # type: ignore
         if Orig is tuple:
-            xs = []
-            for X in args:
-                xs.append(self.parse(X))
-            return tuple(xs)  # type: ignore
+            if len(args) == 2 and args[1] is ...:
+                X = args[0]
+                xs = []
+                while True:
+                    try:
+                        with self.attempt():
+                            xs.append(self.parse(X))
+                    except:
+                        break
+                return tuple(xs)  # type: ignore
+            else:
+                xs = []
+                for X in args:
+                    xs.append(self.parse(X))
+                return tuple(xs)  # type: ignore
 
         raise NotImplementedError(f"Cannot parse {t}")
 

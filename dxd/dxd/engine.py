@@ -4,7 +4,7 @@ from contextvars import ContextVar
 from typing import Any, Generator, Literal, Optional, Protocol, Type
 
 from miniscutil.adapt import adapt, restore
-from .expr import Expr, AbstractExpr
+from .q import Expr, PlaceholderContext, Statement, sql
 
 
 class Engine(ABC):
@@ -16,13 +16,19 @@ class Engine(ABC):
     def protocol(self):
         raise NotImplementedError()
 
-    def execute_expr(self, expr: Expr) -> Any:
-        t = expr.template
-        if not t.rstrip().endswith(";"):
-            t += ";"
-        return self.execute(t, tuple(self.adapt(x) for x in expr.values))
+    def execute_expr(self, statement: Statement | list[Statement]) -> Any:
+        with PlaceholderContext() as pc:
+            if isinstance(statement, list):
+                q = ";\n".join(sql(x) for x in statement)
+            elif isinstance(statement, Statement):
+                q = sql(statement)
+            else:
+                raise TypeError()
+        if not q.rstrip().endswith(";"):
+            q += ";"
+        return self.execute(q, values=tuple(pc.args), kwvalues=pc.kwargs)
 
-    def execute(self, query: str, values: tuple[Any, ...] = ()) -> Any:
+    def execute(self, query: str, values: tuple[Any, ...] = (), kwvalues={}) -> Any:
         raise NotImplementedError()
 
     def executemany(self, query: str, values: list[tuple[Any, ...]]):

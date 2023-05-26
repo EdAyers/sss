@@ -18,7 +18,8 @@ from typing import (
 from typing_extensions import dataclass_transform
 from .engine import Engine, engine_context
 from .column import Column, col
-from .expr import Expr
+from .q import Expr, FromClause, SelectStatement, parse_sql, parse_commands, Setter
+import dxd.q as q
 from .pattern import Pattern
 
 T = TypeVar("T", bound="Schema")
@@ -83,6 +84,9 @@ class Schema(metaclass=SchemaMeta):
         else:
             raise TypeError(f"can't convert {item} to a table column")
 
+    def __init__(self, **kwargs):
+        raise NotImplementedError("Schema is abstract")
+
 
 @dataclass
 class Table(Generic[T]):
@@ -91,7 +95,8 @@ class Table(Generic[T]):
     schema: "Type[T]"
 
     def __len__(self):
-        c = self.connection.execute(f"SELECT COUNT(*) FROM {self.name} ; ")
+        smt = parse_commands(f"SELECT COUNT(*) FROM {self.name}")
+        c = self.connection.execute_expr(smt)
         return c.fetchone()[0]
 
     def drop(self, not_exists_ok: bool = True):
@@ -110,16 +115,20 @@ class Table(Generic[T]):
         )
         return bool(cur.fetchone())
 
-    def _mk_where_clause(self, where: WhereClause) -> "Expr":
+    def _mk_where_clause(self, where: WhereClause) -> Optional[q.WhereClause]:
         if where is True:
-            return Expr.empty()
+            return None
         if isinstance(where, dict):
             e = [self.schema.as_column(k) == v for k, v in where.items()]
-            e = Expr.binary("AND", e, precedence=2)
-        else:
-            assert isinstance(where, Expr)
+            e = reduce(operator.and_, e)
+        elif isinstance(where, tuple):
+            e = reduce(operator.and_, where)
+        elif isinstance(where, Expr):
             e = where
-        return Expr("WHERE ?", [e])
+        else:
+            raise TypeError("where clause must be a dict, tuple, or Expr")
+        e = q.WhereClause.create(where)
+        return e
 
     def primary_key_pattern(self) -> Pattern:
         pcs = [c for c in columns(self) if c.primary]
@@ -128,25 +137,9 @@ class Table(Generic[T]):
         return Pattern(tuple(Pattern(c) for c in pcs))
 
     def pattern(self) -> Pattern[T]:
+        """Return a pattern sending table entries to instances of the self.schema class."""
         cs = list(columns(self))
-
-        def blam(d: dict) -> T:
-            return self.schema(**d)
-
-        return Pattern({c.name: Pattern(c) for c in cs}).map(blam)
-
-    def where_to_expr(self, where: WhereClause) -> Expr:
-        if where is True:
-            return Expr.empty()
-        elif isinstance(where, dict):
-            kvs = reduce(
-                operator.and_, [self.schema.as_column(k) == v for k, v in where.items()]
-            )
-            return kvs
-        elif isinstance(where, tuple):
-            return reduce(operator.and_, where)
-        else:
-            return Expr(where)
+        return Pattern({c.name: Pattern(c) for c in cs}).map(lambda d: self.schema(**d))
 
     @overload
     def select(
@@ -175,25 +168,39 @@ class Table(Generic[T]):
 
     def select(self, *, where=True, select=None, order_by: Optional[Any] = None, descending=False, limit: Optional[int] = None, distinct=False):  # type: ignore
         p: Pattern = Pattern(select) if select is not None else self.pattern()
-        distinct_q = "DISTINCT " if distinct else ""
-        query = Expr(f"SELECT {distinct_q}?\nFROM {self.name} ", [p.to_expr()])
-        if where is not True:
-            query = Expr("?\n?", [query, self._mk_where_clause(where)])
+
+        core = q.SelectCore(
+            smode="DISTINCT" if distinct else None,
+            columns=[q.AliasedExpr(expr=x) for x in p.items],
+            from_clause=FromClause.of_table_name(self.name),
+            where_clause=self._mk_where_clause(where),
+        )
+        stmt = q.SelectStatement(
+            core=[core],
+        )
         if order_by is not None:
-            asc = "DESC" if descending else "ASC"
-            query = Expr(f"?\nORDER BY ? {asc}", [query, order_by])
+            stmt.order_by_clause = q.OrderByClause(
+                terms=[
+                    q.OrderingTerm(
+                        expr=q.expr(order_by),
+                        dir="DESC" if descending else "ASC",
+                    )
+                ]
+            )
         if limit is not None:
-            query = Expr(f"?\nLIMIT {limit}", [query])
-        xs = self.connection.execute_expr(query)
+            stmt.limit_clause = q.LimitClause(limit=q.expr(limit))
+        xs = self.connection.execute_expr(stmt)
         return map(p.outfn, xs)
 
     def sum(self, col, where=True) -> float:
         c = self.schema.as_column(col)
-        query = Expr(f"SELECT SUM({c.name}) \nFROM {self.name} ", [])
-        if where is not True:
-            query = Expr("?\n?", [query, self._mk_where_clause(where)])
-        xs = self.connection.execute_expr(query)
-        return next(iter(xs))[0] or 0
+        statement = q.parse_statement(f"SELECT SUM( ? ) FROM {self.name}", c)
+        assert isinstance(statement, q.SelectStatement)
+        c = statement.core[0]
+        assert isinstance(c, q.SelectCore)
+        c.where_clause = self._mk_where_clause(where)
+        xs = self.connection.execute_expr(statement)
+        return next(iter(xs))[0] or 0  # type: ignore
 
     @overload
     def insert_one(self, item: T, *, or_ignore=False) -> None:
@@ -227,31 +234,30 @@ class Table(Generic[T]):
         items = list(items)
         assert all(isinstance(x, self.schema) for x in items)
         cs = list(columns(self))
-        qfs = ", ".join(c.name for c in cs)
-        qqs = ", ".join("?" for _ in cs)
-        q = f"INSERT INTO {self.name} ({qfs}) VALUES ({qqs}) "
-        if or_ignore:
-            q += "ON CONFLICT DO NOTHING "
+        values: list[q.BracketList[Expr]] = [
+            q.BracketList(
+                [q.UnnamedPlaceholder(c.adapt(getattr(x, c.name))) for c in cs]
+            )
+            for x in items
+        ]
+
+        statement = q.InsertStatement(
+            table_name=q.Identifier(self.name),
+            columns=q.BracketList(cs),
+            values=q.InsertValues(
+                values=values, upsert=q.ON_CONFLICT_DO_NOTHING if or_ignore else None
+            ),
+        )
         if returning is not None:
-            adapt = engine_context.get().adapt
             p = Pattern(returning)
-            rq = Expr("RETURNING ? ;", [p.to_expr()])
-            vs = [
-                tuple(
-                    [c.adapt(getattr(item, c.name)) for c in cs]
-                    + list(map(adapt, rq.values))
-                )
-                for item in items
-            ]
-            q = q + rq.template
-            # [note] RETURNING keyword is not supported for executemany()
-            return [p.outfn(self.connection.execute(q, v).fetchone()) for v in vs]
+            statement.returning_clause = q.ReturningClause(
+                items=[q.AliasedExpr(expr=x) for x in p.items]
+            )
+            cur = self.connection.execute_expr(statement)
+            return map(p.outfn, cur)
         else:
-            q += ";"
-            vs = [tuple(c.adapt(getattr(item, c.name)) for c in cs) for item in items]
-            cursor = self.connection.executemany(q, vs)
-            cursor.close()
-            return
+            cur = self.connection.execute_expr(statement)
+            cur.close()
 
     @overload
     def select_one(
@@ -308,23 +314,27 @@ class Table(Generic[T]):
 
     def update(self, values, where=True, returning=None):  # type: ignore
         # [todo] if 'where : T', set where to be T's primary key.
-        def mk_setter(key, value) -> "Expr":
-            key = self.schema.as_column(key)
-            return Expr(f"{key.name} = ?", [value])
 
-        setters = Expr.binary(", ", [mk_setter(k, v) for k, v in values.items()])
-        t = "UPDATE"
-        query = Expr(f"{t} {self.name} SET ? ", [setters])
-        if where is not True:
-            assert isinstance(where, Expr)
-            query = Expr("?\nWHERE ?", [query, where])
+        setters: q.Setters = [
+            q.Setter(col=q.Identifier(self.schema.as_column(k).name), value=q.expr(v))
+            for k, v in values.items()
+        ]
+
+        statement = q.UpdateStatement(
+            name=q.QualifiedTableName(name=q.Identifier(self.name)),
+            setters=setters,
+            where_clause=self._mk_where_clause(where),
+        )
+
         if returning is not None:
             p = Pattern(returning)
-            query = Expr("?\nRETURNING ?", [query, p.to_expr()])
-            xs = self.connection.execute_expr(query)
+            statement.returning_clause = q.ReturningClause(
+                items=[q.AliasedExpr(expr=x) for x in p.items]
+            )
+            xs = self.connection.execute_expr(statement)
             return map(p.outfn, xs)
         else:
-            cur = self.connection.execute_expr(query)
+            cur = self.connection.execute_expr(statement)
             if self.connection.mode == "sqlite":
                 i = cur.execute("SELECT changes();").fetchone()[0]
                 return i
@@ -333,8 +343,11 @@ class Table(Generic[T]):
 
     def delete(self, where: WhereClause):
         assert isinstance(where, Expr)
-        q = Expr(f"DELETE FROM {self.name} \nWHERE ?", [where])
-        self.connection.execute_expr(q)
+        statement = q.DeleteStatement(
+            table_name=q.QualifiedTableName(name=q.Identifier(self.name)),
+            where_clause=self._mk_where_clause(where),
+        )
+        self.connection.execute_expr(statement)
 
     def clear(self):
         q = f"DELETE FROM {self.name};"
@@ -393,9 +406,7 @@ class Table(Generic[T]):
                 elif fk is True:
                     # get the primary key
                     p = table.primary_key_pattern()
-                    e = p.to_expr()
-                    assert len(e.values) == 0, "pattern had values"
-                    t = e.template
+                    t = q.sql(list(p.items))
                     logger.debug(f"Guessing template {t} for table {table.name}")
                     fields.append(
                         f"FOREIGN KEY ({c.name}) REFERENCES {table.name} ({t}) ON DELETE CASCADE"
@@ -431,8 +442,10 @@ class Table(Generic[T]):
                 SchemaRecord(table_name=name, fields=fields), or_ignore=True
             )
 
-        q = f"CREATE TABLE IF NOT EXISTS {name} (\n  {fields}\n);"
-        engine.execute(q)
+        statement_string = f"CREATE TABLE IF NOT EXISTS {name} (\n  {fields}\n);"
+        # [todo] just construct the create table statement directly rather than reparsing it.
+        statement = q.parse_sql(q.CreateTableStatement, statement_string)
+        engine.execute_expr(statement)
         engine.commit()
         return cls(name=name, connection=engine, schema=schema)  # type: ignore
 

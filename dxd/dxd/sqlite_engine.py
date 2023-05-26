@@ -45,9 +45,11 @@ class SqliteEngine(Engine):
     def protocol(self):
         return P
 
-    def execute(self, query, values=()):
+    def execute(self, query, values=(), kwvalues={}):
         msg = textwrap.indent(str(query) + "\n" + str(values), " " * 4)
         logger.debug(f"SqliteEngine.execute:\n{msg}")
+        if len(kwvalues) > 0:
+            raise NotImplementedError("kwvalues not supported")
         return self.connection.execute(query, values)
 
     def executemany(self, query: str, values):
@@ -80,7 +82,7 @@ class SqliteEngine(Engine):
             elif issubclass(T, bytes):
                 return "BLOB"
             elif issubclass(T, datetime.datetime):
-                return "timestamp"
+                return "TEXT"
             elif issubclass(T, uuid.UUID):
                 return "BLOB"
             elif issubclass(T, Enum):

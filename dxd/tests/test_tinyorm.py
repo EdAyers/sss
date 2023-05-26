@@ -84,12 +84,12 @@ def test_it(db_engine: Engine):
 
 
 if __name__ == "__main__":
-    with psycopg.connect(
-        host="localhost", port=5432, dbname="test", user="edward", password=""
-    ) as conn:
-        with engine(PsycopgEngine(conn)) as eng:
-            test_it(eng)
-
-    # with sqlite3.connect(":memory:") as conn:
-    #     with engine(SqliteEngine(conn)) as eng:
+    # with psycopg.connect(
+    #     host="localhost", port=5432, dbname="test", user="edward", password=""
+    # ) as conn:
+    #     with engine(PsycopgEngine(conn)) as eng:
     #         test_it(eng)
+
+    with sqlite3.connect(":memory:") as conn:
+        with engine(SqliteEngine(conn)) as eng:
+            test_it(eng)

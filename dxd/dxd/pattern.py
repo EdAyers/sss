@@ -6,7 +6,8 @@ from typing import Any, Callable, Generic, Optional, Type, TypeVar, Union, overl
 from miniscutil.adapt import adapt, restore
 
 from miniscutil.ofdict import MyJsonEncoder, TypedJsonDecoder
-from .expr import Expr, AbstractExpr
+from .q import Expr, expr
+import dxd.q as q
 from .column import Column
 
 logger = logging.getLogger("dxd")
@@ -16,7 +17,7 @@ R = TypeVar("R")
 
 
 class Pattern(Generic[S]):
-    """A list of Exprs and a function sending these exprs to a python value."""
+    """A list of SQL expressions and a function sending these exprs to a python value."""
 
     items: list[Expr]
     outfn: Callable[[list[Any]], S]
@@ -32,11 +33,11 @@ class Pattern(Generic[S]):
         ...
 
     @overload
-    def __init__(self, items: list["Expr"], outfn: Callable[[list[Any]], S]):
+    def __init__(self, items: list[Expr], outfn: Callable[[list[Any]], S]):
         ...
 
     @overload
-    def __init__(self, obj: "AbstractExpr"):
+    def __init__(self, obj: Expr):
         ...
 
     def __init__(self, obj: S, outfn=None):  # type: ignore
@@ -50,7 +51,7 @@ class Pattern(Generic[S]):
             self.outfn = obj.outfn
             return
         elif isinstance(obj, Column):
-            self.items = [Expr(obj)]
+            self.items = [expr(obj)]
             self.outfn = lambda x: obj.restore(x[0])  # type: ignore
         elif isinstance(obj, (tuple, list)):
             self.items = []
@@ -106,9 +107,6 @@ class Pattern(Generic[S]):
 
         return Pattern(self.items, comp)
 
-    def to_expr(self) -> "Expr":
-        return Expr.binary(", ", self.items)
-
 
 def sum(inner) -> Any:
     """Runs the SUM reduction on the given select pattern."""
@@ -118,4 +116,5 @@ def sum(inner) -> Any:
             f"Pattern {inner} has {len(inner.items)} items but needs 1 for a SUM."
         )
     item = inner.items[0]
-    return Pattern([Expr("SUM(?)", [item])], lambda x: x[0] or 0)
+    e = q.parse_sql(Expr, "SUM(?)", item)
+    return Pattern([e], lambda x: x[0] or 0)

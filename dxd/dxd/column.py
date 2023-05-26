@@ -21,6 +21,12 @@ R = TypeVar("R")
 
 
 class Column(Identifier):
+    """ An identifier for a column in a schama.
+
+    Note that it does not identify a table, there could be multiple tables
+    with the same schema, in which case it is ambiguous which table column
+    this object refers to.
+    """
     field: Field
     """The dataclass field that this column represents."""
     schema: Type  # : Schema # cyclic reference
