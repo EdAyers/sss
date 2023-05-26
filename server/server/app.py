@@ -58,7 +58,7 @@ def startup_event():
 @app.on_event("startup")
 async def setup_loggers():
     logger = logging.getLogger("server")
-    logger.setLevel(logging.DEBUG)  # [todo] if in dev mode
+    logger.setLevel(logging.INFO)  # [todo] if in dev mode
     # handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     logger.addHandler(RichHandler())
 
@@ -103,18 +103,18 @@ async def web_login(
         # [todo] allow redirects to other routes in our domain
         # remember: never allow arbitrary redirects to other domains
         # for now just always redirect to index.
-        logger.debug(f'redirect_uri is None')
+        logger.debug(f"redirect_uri is None")
         return RedirectResponse("/", headers=headers)
 
     redirect_domain = urlparse(redirect_uri)
     # note: `.netloc` includes port, `.hostname` does not.
     if redirect_domain.hostname == domain:
-        logger.debug(f'login redirect exact match')
+        logger.debug(f"login redirect exact match")
         path = urlparse(redirect_uri).path
         return RedirectResponse(path, headers=headers)
     elif redirect_domain.hostname == "127.0.0.1":
         # local redirect for client loopback
-        logger.debug(f'login redirect is a localhost {redirect_domain}')
+        logger.debug(f"login redirect is a localhost {redirect_domain}")
         redirect_uri = append_url_params(redirect_uri, jwt=jwt)
         headers.update(
             {
