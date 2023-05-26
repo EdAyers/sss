@@ -23,8 +23,6 @@ from miniscutil.ofdict import MyJsonEncoder, ofdict
 import json
 from .transport import Transport, TransportClosedError, TransportClosedOK
 
-from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
-
 logger = logging.getLogger(__name__)
 
 
@@ -538,6 +536,7 @@ class RpcServer:
             return None
 
         if req.method not in self.dispatcher:
+            logger.error(f'method "{req.method}" not found')
             raise method_not_found(req.method)
 
         T = self.dispatcher.param_type(req.method)
@@ -547,6 +546,7 @@ class RpcServer:
             message = (
                 f"{req.method} {type(e).__name__} failed to decode params to {T}: {e}"
             )
+            logger.exception(message)
             raise invalid_params(message)
         result = await self.dispatcher.dispatch(req.method, params)
         return result

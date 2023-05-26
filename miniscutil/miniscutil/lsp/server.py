@@ -1,13 +1,20 @@
 import logging
-from .types import InitializeParams, InitializeResult, PeerInfo, ServerCapabilities
-from miniscutil.rpc import RpcServer, InitializationMode, rpc_method
+from .types import (
+    InitializeParams,
+    InitializeResult,
+    PeerInfo,
+    ServerCapabilities,
+    ApplyWorkspaceEditParams,
+)
+from ..rpc import InitializationMode, rpc_method
+from ..rpc.extrarpc import ExtraRpc
 
 """ Implementation of an LSP server """
 
 logger = logging.getLogger("LSP")
 
 
-class LspServer(RpcServer):
+class LspServer(ExtraRpc):
     capabilities: ServerCapabilities
 
     def __init__(self, transport):
@@ -25,3 +32,6 @@ class LspServer(RpcServer):
     @rpc_method("initialized")
     async def on_client_initialized(self, params):
         logger.info("client initialized")
+
+    async def apply_workspace_edit(self, params: ApplyWorkspaceEditParams):
+        return await self.request("workspace/applyEdit", params)
