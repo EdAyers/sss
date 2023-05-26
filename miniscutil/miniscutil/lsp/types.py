@@ -1,8 +1,11 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Generic, Literal, Optional, TypeAlias, TypeVar, Union
+from typing import Optional as opt
 import urllib.parse
+
+T = TypeVar("T")
 
 DocumentUri = str
 
@@ -60,12 +63,9 @@ class Range:
     def mk(cls, l0: int, c0: int, l1: int, c1: int):
         return cls(Position(l0, c0), Position(l1, c1))
 
-
-@dataclass
-class TextDocumentContentChangeEvent:
-    range: Optional[Range]
-    rangeLength: Optional[int]
-    text: str
+    @classmethod
+    def of_pos(cls, pos: Position):
+        return cls(pos, pos)
 
 
 @dataclass
@@ -78,18 +78,17 @@ class TextDocumentParams:
 
 @dataclass
 class TextDocumentPositionParams:
+    """A text document identifier and a position within that document."""
+
     textDocument: TextDocumentIdentifier
     position: Position
 
 
 @dataclass
-class DidChangeTextDocumentParams:
-    """
-    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#didChangeTextDocumentParams
-    """
-
+class DidSaveTextDocumentParams:
     textDocument: TextDocumentIdentifier
-    contentChanges: list[TextDocumentContentChangeEvent]
+    text: opt[str] = field(default=None)
+    """ The content when saved. Depends on the includeText value when the save notification was requested. """
 
 
 @dataclass
@@ -124,8 +123,19 @@ class TextDocumentClientCapabilities:
 
 
 @dataclass
+class ClientWorkspaceCapabilities:
+    applyEdit: opt[bool] = field(default=None)
+    # workspaceEdit: opt[WorkspaceEditClientCapabilities] = field(default=None)
+
+
+@dataclass
 class ClientCapabilities:
-    textDocument: Optional[TextDocumentClientCapabilities]
+    textDocument: opt[TextDocumentClientCapabilities] = field(default=None)
+    workspace: opt[ClientWorkspaceCapabilities] = field(default=None)
+    # notebookDocument
+    # window
+    # general
+    # experimental
 
 
 @dataclass
@@ -152,9 +162,92 @@ class TextDocumentSyncKind(Enum):
 
 
 @dataclass
+class SaveOptions:
+    includeText: Optional[bool] = field(default=None)
+
+
+@dataclass
 class TextDocumentSyncOptions:
     openClose: Optional[bool] = field(default=None)
     change: Optional[TextDocumentSyncKind] = field(default=None)
+    willChange: Optional[bool] = field(default=None)
+    willSaveWaitUntil: Optional[bool] = field(default=None)
+    save: Optional[Union[bool, SaveOptions]] = field(default=None)
+
+
+@dataclass
+class TextDocumentItem:
+    uri: DocumentUri
+    languageId: str
+    version: int
+    text: str
+    """ Content of the opened text document. """
+
+    def __fspath__(self):
+        return self.uri
+
+
+@dataclass
+class DidOpenTextDocumentParams:
+    textDocument: TextDocumentItem
+
+
+@dataclass
+class DocumentFilter:
+    language: Optional[str]
+    """ A language id, like `typescript`. """
+    scheme: Optional[str]
+    """ A Uri scheme, like `file` or `untitled`. """
+    pattern: Optional[str]
+    """ A glob pattern, like `*.{ts,js}`. """
+
+
+DocumentSelector: TypeAlias = list[DocumentFilter]
+
+
+@dataclass
+class TextDocumentRegistrationOptions:
+    documentSelector: Optional[DocumentSelector] = field(default=None)
+
+
+@dataclass
+class TextDocumentChangeRegistrationOptions:
+    syncKind: TextDocumentSyncKind
+
+
+@dataclass
+class TextDocumentContentChangeEvent:
+    range: Optional[Range]
+    rangeLength: Optional[int]
+    text: str
+    """ The new text of the whole document, or the replacement text for the range if the range field is provided. """
+
+
+@dataclass
+class DidCloseTextDocumentParams:
+    textDocument: TextDocumentIdentifier
+
+
+class TextDocumentSaveReason(Enum):
+    Manual = 1
+    AfterDelay = 2
+    FocusOut = 3
+
+
+@dataclass
+class WillSaveTextDocumentParams:
+    textDocument: TextDocumentIdentifier
+    reason: TextDocumentSaveReason
+
+
+@dataclass
+class DidChangeTextDocumentParams:
+    """
+    https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#didChangeTextDocumentParams
+    """
+
+    textDocument: TextDocumentIdentifier
+    contentChanges: list[TextDocumentContentChangeEvent]
 
 
 @dataclass
@@ -163,10 +256,60 @@ class CodeLensOptions:
 
 
 @dataclass
+class ServerWorkspaceFileOperationCapabilities:
+    # didCreate
+    # willCreate
+    # didRename
+    # willRename
+    # didDelete
+    # willDelete
+    pass
+
+
+@dataclass
+class ServerWorkspaceCapabilities:
+    # workspaceFolders
+    # fileOperations
+    pass
+
+
+@dataclass
 class ServerCapabilities:
     positionEncoding: Optional[PositionEncodingKind] = field(default=None)
     textDocumentSync: Optional[TextDocumentSyncOptions] = field(default=None)
     codeLensProvider: Optional[CodeLensOptions] = field(default=None)
+    # notebookDocumentSync
+    # completionProvider
+    # hoverProvider
+    # signatureHelpProvider
+    # declarationProvider
+    # definitionProvider
+    # typeDefinitionProvider
+    # implementationProvider
+    # referencesProvider
+    # documentHighlightProvider
+    # documentSymbolProvider
+    # codeActionProvider
+    # documentLinkProvider
+    # colorProvider
+    # documentFormattingProvider
+    # documentRangeFormattingProvider
+    # documentOnTypeFormattingProvider
+    # renameProvider
+    # foldingRangeProvider
+    # executeCommandProvider
+    # selectionRangeProvider
+    # linkedEditingRangeProvider
+    # callHierarchyProvider
+    # semanticTokensProvider
+    # monikerProvider
+    # typeHierarchyProvider
+    # inlineValueProvider
+    # inlayHintProvider
+    # diagnosticProvider
+    # workspaceSymbolProvider
+    # workspace
+    # experimental : Any = field(default = None)
 
 
 @dataclass
@@ -216,3 +359,124 @@ class CodeLens:
 
 
 CodeLensResponse = Optional[list[CodeLens]]
+
+
+ProgressToken: TypeAlias = str
+
+
+@dataclass
+class WorkDoneProgressParams:
+    workDoneToken: Optional[ProgressToken] = field(default=None)
+    """ Optional token that a server can use to report work done progress. """
+
+
+@dataclass
+class WorkDoneProgressBegin:
+    title: str
+    """ Examples: 'Indexing', 'Linking dependencies'. """
+    kind: Literal["begin"] = field(default="begin")
+    cancellable: Optional[bool] = field(default=None)
+    message: Optional[str] = field(default=None)
+    percentage: Optional[int] = field(default=None)
+
+
+@dataclass
+class WorkDoneProgressReport:
+    kind: Literal["report"] = field(default="report")
+    cancellable: Optional[bool] = field(default=None)
+    message: Optional[str] = field(default=None)
+    percentage: Optional[int] = field(default=None)
+    """ Percentage of work done (100 = 100%). """
+
+
+@dataclass
+class WorkDoneProgressEnd:
+    kind: Literal["end"] = field(default="end")
+    message: Optional[str] = field(default=None)
+
+
+WorkDoneProgressValue = Union[
+    WorkDoneProgressBegin, WorkDoneProgressReport, WorkDoneProgressEnd
+]
+
+ChangeAnnotationIdentifier: TypeAlias = str
+
+
+@dataclass
+class TextEdit:
+    range: Range
+    newText: str
+    annotationId: Optional[ChangeAnnotationIdentifier] = field(default=None)
+
+
+@dataclass
+class CreateFileOptions:
+    overwrite: Optional[bool] = field(default=None)
+    ignoreIfExists: Optional[bool] = field(default=None)
+
+
+@dataclass
+class CreateFile:
+    kind: Literal["create"]
+    uri: DocumentUri
+    options: Optional[CreateFileOptions] = field(default=None)
+    annotationId: Optional[ChangeAnnotationIdentifier] = field(default=None)
+
+
+@dataclass
+class RenameFileOptions:
+    overwrite: Optional[bool] = field(default=None)
+    ignoreIfExists: Optional[bool] = field(default=None)
+
+
+@dataclass
+class RenameFile:
+    kind: Literal["rename"]
+    oldUri: DocumentUri
+    newUri: DocumentUri
+    options: Optional[RenameFileOptions] = field(default=None)
+    annotationId: Optional[ChangeAnnotationIdentifier] = field(default=None)
+
+
+@dataclass
+class DeleteFileOptions:
+    recursive: Optional[bool] = field(default=None)
+    ignoreIfNotExists: Optional[bool] = field(default=None)
+
+
+@dataclass
+class DeleteFile:
+    kind: Literal["delete"]
+    uri: DocumentUri
+    options: Optional[DeleteFileOptions] = field(default=None)
+    annotationId: Optional[ChangeAnnotationIdentifier] = field(default=None)
+
+
+@dataclass
+class TextDocumentEdit:
+    textDocument: TextDocumentIdentifier
+    edits: list[TextEdit]
+
+
+@dataclass
+class ChangeAnnotation:
+    label: str
+    needsConfirmation: Optional[bool] = field(default=None)
+    description: Optional[str] = field(default=None)
+
+
+@dataclass
+class WorkspaceEdit:
+    changes: Optional[dict[DocumentUri, list[TextEdit]]] = field(default=None)
+    documentChanges: Optional[
+        list[Union[TextDocumentEdit, CreateFile, RenameFile, DeleteFile]]
+    ] = field(default=None)
+    changeAnnotations: Optional[
+        dict[ChangeAnnotationIdentifier, ChangeAnnotation]
+    ] = field(default=None)
+
+
+@dataclass
+class ApplyWorkspaceEditParams:
+    edit: WorkspaceEdit
+    label: Optional[str] = field(default=None)
