@@ -45,7 +45,7 @@ class RequestFutureWithProgress(Generic[Q, R]):
     """A future for an RPC request that also has a 'progress()' field."""
 
     token: ProgressToken
-    _q: asyncio.Queue[Q | StopAsyncIteration]
+    _q: asyncio.Queue[Union[Q, StopAsyncIteration]]
     _r: asyncio.Future[R]
     _callbacks: set[Callable[[Q], None]]
 
