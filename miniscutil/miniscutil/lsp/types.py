@@ -463,3 +463,11 @@ class WorkspaceEdit:
 class ApplyWorkspaceEditParams:
     edit: WorkspaceEdit
     label: Optional[str] = field(default=None)
+
+
+TraceValue: TypeAlias = Literal["off", "messages", "verbose"]
+
+
+@dataclass
+class SetTraceParams:
+    value: TraceValue

@@ -124,3 +124,8 @@ class LspServer(ExtraRpc):
     @rpc_method("textDocument/didClose")
     def on_did_close(self, params: lsp.DidCloseTextDocumentParams):
         pass
+
+    @rpc_method("$/setTrace")
+    def on_set_trace(self, params: lsp.SetTraceParams):
+        # [todo] logging stuff.
+        pass
