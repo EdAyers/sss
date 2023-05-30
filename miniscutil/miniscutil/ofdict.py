@@ -91,6 +91,8 @@ def dpath(coord: str):
 
 
 class OfDictError(TypeError):
+    """Error caused by a failure to convert a dictionary-like object to a type using ofdict."""
+
     def __init__(self, msg: str):
         super().__init__(msg + atstr())
 
@@ -112,6 +114,7 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         raise TypeError(
             f"please make sure your class {A} is referred using types and not string-escaped types"
         )
+        # [todo] also https://docs.python.org/3/library/typing.html#typing.ForwardRef
     S = as_newtype(A)
     if S is not None:
         return A(ofdict(S, a))
@@ -145,7 +148,8 @@ def ofdict(A: Type[T], a: JsonLike) -> T:
         for X in get_args(A):
             try:
                 return ofdict(X, a)
-            except Exception as e:
+            except OfDictError as e:
+                # [note] python 3.11 has exception groups instead
                 es.append(e)
         # [todo] raise everything?
         raise es[-1]
@@ -436,6 +440,25 @@ class OfDictUnion:
 
     It works by also storing a  `"__class__": cls.__name__` entry on a class table.
     When the dict is deserialised, it will look up this class name to find the subclass.
+
+
+    Example usage:
+    ```
+    class Base(OfDictUnion):
+      pass
+
+    @dataclass
+    class X(Base):
+      x : str
+
+    @dataclass
+    class Y(Base):
+      y : int
+
+    assert todict(X(x="hello")) == {"__class__": "X", "x": "hello"}
+    assert todict(Y(y=42)) == {"__class__": "Y", "y": 42}
+    assert ofdict(Base, {"__class__": "X", "x": "hello"}) == X(x="hello")
+    ```
     """
 
     def __init_subclass__(cls, **kwargs):
@@ -461,7 +484,7 @@ try:
         try:
             return ModelCls.parse_obj(item)
         except ValidationError as e:
-            raise TypeError(f"Model {ModelCls.__name__} is invalid: {e}") from e
+            raise OfDictError(f"Model {ModelCls.__name__} is invalid: {e}") from e
 
     # [todo] pydantic validation types like EmailStr, SecretStr etc
 except ImportError:
