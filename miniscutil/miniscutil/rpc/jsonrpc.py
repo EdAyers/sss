@@ -523,8 +523,6 @@ class RpcServer:
                     return None
             raise invalid_request("server has shut down")
 
-        logger.debug(f"{self.name} ← {req.id} {req.method}")
-
         if req.method == "$/cancelRequest":
             if not req.is_notification:
                 raise invalid_request("cancel request must be a notification")
@@ -536,7 +534,6 @@ class RpcServer:
             return None
 
         if req.method not in self.dispatcher:
-            logger.error(f'method "{req.method}" not found')
             raise method_not_found(req.method)
 
         T = self.dispatcher.param_type(req.method)
