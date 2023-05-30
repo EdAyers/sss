@@ -101,7 +101,7 @@ class LspServer(ExtraRpc):
             callback(**kwargs) for callback in self.change_callbacks[item_id.uri]
         ]
         callbacks.append(self.on_change(**kwargs))
-        await asyncio.wait(callbacks)
+        await asyncio.wait(map(asyncio.ensure_future, callbacks))
 
     def register_change_callback(self, callback, uri: lsp.DocumentUri):
         """Register a callback to be called when the document changes"""

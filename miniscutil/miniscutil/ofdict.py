@@ -51,7 +51,7 @@ def ofdict_dataclass(A: Type[T], a: JsonLike) -> T:
     d2 = {}
     for f in fields(A):
         if not isinstance(a, dict):
-            raise TypeError(
+            raise OfDictError(
                 f"Error while decoding dataclass {A}, expected a dict but got {a} : {type(a)}"
             )
         k = f.name
@@ -59,7 +59,7 @@ def ofdict_dataclass(A: Type[T], a: JsonLike) -> T:
             if f.type is not None and is_optional(f.type):
                 v = None
             else:
-                raise ValueError(
+                raise OfDictError(
                     f"Missing {f.name} on input dict. Decoding {a} to type {A}."
                 )
         else:
