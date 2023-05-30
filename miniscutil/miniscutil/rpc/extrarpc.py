@@ -9,12 +9,14 @@ from typing import (
     Callable,
     Generic,
     Optional,
-    TypeAlias,
-    TypeVar,
     Union,
 )
 from uuid import uuid4
 
+try:
+    from typing import TypeAlias, TypeVar
+except:
+    from typing_extensions import TypeAlias, TypeVar
 from .transport import Transport
 from .jsonrpc import InitializationMode, RpcServer, rpc_method
 

@@ -1,11 +1,14 @@
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Generic, Literal, Optional, TypeAlias, TypeVar, Union
+from typing import Any, Generic, Literal, Optional, Union
 from typing import Optional as opt
 import urllib.parse
 from .document import *
-
+try:
+    from typing import TypeAlias, TypeVar
+except:
+    from typing_extensions import TypeAlias, TypeVar
 T = TypeVar("T")
 
 DocumentUri = str

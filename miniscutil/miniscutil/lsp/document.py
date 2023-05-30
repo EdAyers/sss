@@ -5,8 +5,11 @@ from dataclasses import dataclass, replace
 from enum import Enum
 import functools
 import itertools
-from typing import Iterable, Optional, TypeAlias, Union
-
+from typing import Iterable, Optional, Union
+try:
+    from typing import TypeAlias, TypeVar
+except:
+    from typing_extensions import TypeAlias, TypeVar
 from miniscutil.misc import set_ctx
 
 
