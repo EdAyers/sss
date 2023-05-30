@@ -1,9 +1,10 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Generic, Literal, Optional, TypeAlias, TypeVar, Union
 from typing import Optional as opt
 import urllib.parse
+from .document import *
 
 T = TypeVar("T")
 
@@ -19,6 +20,8 @@ All docstrings are copied verbatim from the specification.
 
 https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification
 """
+
+EOL = ["\n", "\r\n", "\r"]
 
 
 def path_of_uri(uri: DocumentUri):
@@ -46,26 +49,6 @@ class TextDocumentIdentifier:
     def __fspath__(self):
         # https://docs.python.org/3/library/os.html#os.PathLike.__fspath__
         return str(path_of_uri(self.uri))
-
-
-@dataclass
-class Position:
-    line: int
-    character: int
-
-
-@dataclass
-class Range:
-    start: Position
-    end: Position
-
-    @classmethod
-    def mk(cls, l0: int, c0: int, l1: int, c1: int):
-        return cls(Position(l0, c0), Position(l1, c1))
-
-    @classmethod
-    def of_pos(cls, pos: Position):
-        return cls(pos, pos)
 
 
 @dataclass
@@ -129,12 +112,38 @@ class ClientWorkspaceCapabilities:
 
 
 @dataclass
+class GeneralClientCapabilities:
+    # staleRequestSupport
+    # regularExpressions
+    # markdown
+    positionEncodings: opt[list[PositionEncodingKind]] = field(
+        default_factory=lambda: [PositionEncodingKind.UTF16]
+    )
+    """ The position encodings supported by the client. Client and server
+    have to agree on the same position encoding to ensure that offsets
+    (e.g. character position in a line) are interpreted the same on both
+    side.
+
+    To keep the protocol backwards compatible the following applies: if
+    the value 'utf-16' is missing from the array of position encodings
+    servers can assume that the client supports UTF-16. UTF-16 is
+    therefore a mandatory encoding.
+
+    If omitted it defaults to ['utf-16'].
+
+    Implementation considerations: since the conversion from one encoding
+    into another requires the content of the file / line the conversion
+    is best done where the file is read which is usually on the server
+    side."""
+
+
+@dataclass
 class ClientCapabilities:
     textDocument: opt[TextDocumentClientCapabilities] = field(default=None)
     workspace: opt[ClientWorkspaceCapabilities] = field(default=None)
     # notebookDocument
     # window
-    # general
+    general: opt[GeneralClientCapabilities] = field(default=None)
     # experimental
 
 
@@ -147,12 +156,6 @@ class InitializeParams:
     initializationOptions: Optional[Any] = field(default=None)
     capabilities: Optional[ClientCapabilities] = field(default=None)
     trace: Optional[Literal["off", "messages", "verbose"]] = field(default=None)
-
-
-class PositionEncodingKind(Enum):
-    UTF8 = "utf-8"
-    UTF16 = "utf-16"
-    UTF32 = "utf-32"
 
 
 class TextDocumentSyncKind(Enum):
@@ -173,23 +176,6 @@ class TextDocumentSyncOptions:
     willChange: Optional[bool] = field(default=None)
     willSaveWaitUntil: Optional[bool] = field(default=None)
     save: Optional[Union[bool, SaveOptions]] = field(default=None)
-
-
-@dataclass
-class TextDocumentItem:
-    uri: DocumentUri
-    languageId: str
-    version: int
-    text: str
-    """ Content of the opened text document. """
-
-    def __fspath__(self):
-        return self.uri
-
-
-@dataclass
-class DidOpenTextDocumentParams:
-    textDocument: TextDocumentItem
 
 
 @dataclass
@@ -216,11 +202,8 @@ class TextDocumentChangeRegistrationOptions:
 
 
 @dataclass
-class TextDocumentContentChangeEvent:
-    range: Optional[Range]
-    rangeLength: Optional[int]
-    text: str
-    """ The new text of the whole document, or the replacement text for the range if the range field is provided. """
+class DidOpenTextDocumentParams:
+    textDocument: TextDocumentItem
 
 
 @dataclass
