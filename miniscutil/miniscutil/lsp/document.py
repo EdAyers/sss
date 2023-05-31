@@ -172,13 +172,22 @@ class DocumentContext:
         assert offsets[0] == len(lines[0])
         return offsets
 
+    def get_line_start_offset(self, line_index: int) -> int:
+        if line_index == 0:
+            return 0
+        if line_index >= self.line_count:
+            return len(self.text)
+        return self.line_offsets[line_index - 1]
+
+    def get_line_end_offset(self, line_index: int) -> int:
+        if line_index >= self.line_count:
+            return len(self.text)
+        return self.line_offsets[line_index]
+
     def get_line(self, index: int) -> str:
-        if index == 0:
-            return self.text[: self.line_offsets[0]]
-        elif index >= self.line_count:
-            return self.text[self.line_offsets[-2] :]
-        else:
-            return self.text[self.line_offsets[index - 1] : self.line_offsets[index]]
+        return self.text[
+            self.get_line_start_offset(index) : self.get_line_end_offset(index)
+        ]
 
     @property
     def position_encoding(self):
