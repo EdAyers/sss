@@ -50,9 +50,10 @@ class LspServer(ExtraRpc):
         logger.info("client initialized")
 
     async def apply_insert_text(
-        self, uri: lsp.DocumentUri, position: lsp.Position, text: str
+        self, uri: lsp.DocumentUri, position: lsp.Position, text: str, version: int = 0
     ):
-        textDocument = lsp.TextDocumentIdentifier(uri=uri, version=0)  # [todo] version
+        assert version is not None, 'version must be given, or we get no edit.'
+        textDocument = lsp.TextDocumentIdentifier(uri=uri, version=version)  # [todo] version
         newText = text
         pos = position
         params = lsp.ApplyWorkspaceEditParams(
