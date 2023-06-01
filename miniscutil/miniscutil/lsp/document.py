@@ -57,12 +57,12 @@ class Position:
     def to_offset(self):
         return document_context.get().position_to_offset(self)
 
-    def __add__(self, offset: Union[int, tuple[int, int]]):
+    def __add__(self, offset: Union[int, tuple[int, int]]) -> "Position":
         if isinstance(offset, int):
             return document_context.get().add_position(self, offset)
         elif isinstance(offset, tuple):
             line, col = offset
-            return replace(self, self.line + line, self.character + col)
+            return replace(self, line=self.line + line, character=self.character + col)
         else:
             raise TypeError(
                 f"unsupported operand type(s) for +: 'Position' and '{type(offset)}'"
@@ -230,6 +230,8 @@ class DocumentContext:
             self.position_to_offset(range.start),
             self.position_to_offset(range.end),
         )
+
+    # [todo] enter, exit does setdoc
 
 
 @dataclass
