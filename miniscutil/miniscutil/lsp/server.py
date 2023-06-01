@@ -11,11 +11,13 @@ from .types import (
     PeerInfo,
     ServerCapabilities,
     ApplyWorkspaceEditParams,
+    ApplyWorkspaceEditResponse,
 )
 import miniscutil.lsp.types as lsp
 from collections import defaultdict
 from ..rpc import InitializationMode, rpc_method
 from ..rpc.extrarpc import ExtraRpc
+from miniscutil.ofdict import ofdict
 
 """ Implementation of an LSP server """
 
@@ -52,8 +54,10 @@ class LspServer(ExtraRpc):
     async def apply_insert_text(
         self, uri: lsp.DocumentUri, position: lsp.Position, text: str, version: int = 0
     ):
-        assert version is not None, 'version must be given, or we get no edit.'
-        textDocument = lsp.TextDocumentIdentifier(uri=uri, version=version)  # [todo] version
+        assert version is not None, "version must be given, or we get no edit."
+        textDocument = lsp.TextDocumentIdentifier(
+            uri=uri, version=version
+        )  # [todo] version
         newText = text
         pos = position
         params = lsp.ApplyWorkspaceEditParams(
@@ -73,9 +77,13 @@ class LspServer(ExtraRpc):
         )
         return await self.apply_workspace_edit(params)
 
-    async def apply_workspace_edit(self, params: ApplyWorkspaceEditParams):
+    async def apply_workspace_edit(
+        self, params: ApplyWorkspaceEditParams
+    ) -> ApplyWorkspaceEditResponse:
         if isinstance(params, ApplyWorkspaceEditParams):
-            return await self.request("workspace/applyEdit", params)
+            response = await self.request("workspace/applyEdit", params)
+            response = ofdict(ApplyWorkspaceEditResponse, response)
+            return response
         else:
             raise TypeError("expected ApplyWorkspaceEditParams or InsertionEdit")
 
