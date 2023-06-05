@@ -5,6 +5,7 @@ from typing import Any, Generic, Literal, Optional, Union
 from typing import Optional as opt
 import urllib.parse
 from .document import *
+
 try:
     from typing import TypeAlias, TypeVar
 except:
@@ -25,33 +26,6 @@ https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/spe
 """
 
 EOL = ["\n", "\r\n", "\r"]
-
-
-def path_of_uri(uri: DocumentUri):
-    x = urllib.parse.urlparse(uri)
-    assert x.netloc == ""
-    assert x.scheme == "file"
-    return Path(x.path)
-
-
-@dataclass
-class TextDocumentIdentifier:
-    """
-    References:
-    - https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentIdentifier
-
-    """
-
-    uri: str
-    version: Optional[int]
-    """
-    The version number of a document will increase after each change, including undo/redo. The number doesn't need to be consecutive.
-    The server can send `null` to indicate that the version is known and the content on disk is the master (as specified with document content ownership).
-    """
-
-    def __fspath__(self):
-        # https://docs.python.org/3/library/os.html#os.PathLike.__fspath__
-        return str(path_of_uri(self.uri))
 
 
 @dataclass
@@ -467,9 +441,11 @@ class ApplyWorkspaceEditParams:
     edit: WorkspaceEdit
     label: Optional[str] = field(default=None)
 
+
 @dataclass
 class ApplyWorkspaceEditResponse:
-    applied : bool
+    applied: bool
+
 
 TraceValue: TypeAlias = Literal["off", "messages", "verbose"]
 
