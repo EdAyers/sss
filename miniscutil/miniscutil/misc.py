@@ -1,7 +1,11 @@
 from dataclasses import dataclass, is_dataclass, Field, fields
 from itertools import filterfalse, tee
 from datetime import datetime, timezone
+import contextvars
 from subprocess import check_output, CalledProcessError
+import contextlib
+from sys import _xoptions
+import itertools
 from typing import (
     IO,
     Callable,
@@ -18,6 +22,7 @@ import math
 import functools
 import contextvars
 import contextlib
+from typing_extensions import deprecated
 
 
 X = TypeVar("X")
@@ -107,6 +112,40 @@ def append_url_params(url: str, **params) -> str:
     result = urlunparse(parts)
     assert isinstance(result, str)
     return result
+
+
+@contextlib.contextmanager
+def onectx(var: contextvars.ContextVar[X], mk: Callable[[], X]):
+    """If the context variable is not set, set it to the result of calling mk()."""
+    o = var.get(None)
+    if o is None:
+        x = mk()
+        token = var.set(x)
+        try:
+            yield x
+        finally:
+            var.reset(token)
+    else:
+        yield o
+
+
+def intercalate(
+    items: Iterable[X],
+    sep: X,
+):
+    xs = iter(items)
+    yield next(xs)
+    for x in xs:
+        yield sep
+        yield x
+
+
+def interlace(items: Iterable[X], seps: Iterable[X]):
+    xs = iter(items)
+    yield next(xs)
+    for s, x in zip(seps, xs):
+        yield s
+        yield x
 
 
 T = TypeVar("T")
