@@ -272,5 +272,6 @@ class TextDocumentItem(DocumentContext):
     def __fspath__(self):
         return str(path_of_uri(self.uri))
 
+    @property
     def id(self):
         return TextDocumentIdentifier(uri=self.uri, version=self.version)
