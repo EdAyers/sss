@@ -3,7 +3,8 @@ from contextvars import ContextVar
 import datetime
 from enum import Enum
 from functools import singledispatch
-from typing import Any, Callable, NewType, Type, get_origin
+import inspect
+from typing import Any, Callable, NewType, Type, TypeAlias, TypeVar, Union, get_origin
 import uuid
 
 from .dispatch import Dispatcher, classdispatch
@@ -12,7 +13,22 @@ from .type_util import as_newtype, as_optional
 """ Implementation of PEP-246 https://peps.python.org/pep-0246/#specification
 
 I'm not sure it quite captures the spirit of the PEP because adapt doesn't necessarily _wrap_ the input.
+
+To summarise, we introduce a new function `adapt(x, protocol)` which attempts to return a casted or adapted version of x that conforms to the protocol.
+The protocol object could be a type, or it could be a `typing.Protocol` object, or it could just be a sentinel object representing a protocol.
+For example, there is no expressible type for the valid input to json.dumps, but we can define a protocol object that represents the valid input to json.dumps.
+
+When we call `adapt(x, protocol)`, the following things happen:
+
+1. If x is already an instance of protocol (ie typechecks to protocol), return x.
+2. If x has a __conform__ method, call it with protocol as an argument. If it returns NotImplemented, continue.
+3. If protocol has an __adapt__ method, call it with x as an argument. If it returns NotImplemented, continue.
+4. Lookup (type(x), protocol) in the adapter table, and call the function if it exists. If it returns NotImplemented, continue.
+5. raise AdaptationError
 """
+
+T = TypeVar("T")
+Proto = TypeVar("Proto")
 
 
 class AdaptationError(TypeError):
@@ -23,34 +39,52 @@ class LiskovViolation(AdaptationError):
     pass
 
 
-adapters: dict[Type, Dispatcher[Callable[[Any], Any]]] = defaultdict(Dispatcher)
+adapters: dict[Type, Dispatcher[Callable[[Any, Any], Any]]] = defaultdict(Dispatcher)
+
+AdapterFn: TypeAlias = Union[Callable[[Any, Any], Any], Callable[[Any], Any]]
 
 
-def register_adapter(T: Type, protocol: Type):
-    def core(f: Callable[[Any], Any]):
+def register_adapter(T: Type, protocol: Any):
+    def core(f: AdapterFn):
         dispatcher = adapters[protocol]
-        dispatcher.register(T, f)
+        params = inspect.signature(f).parameters
+        if len(params) == 1:
+            a = lambda x, p: f(x)  # type: ignore
+        elif len(params) != 2:
+            raise TypeError("Adapter function must take 1 or 2 arguments")
+        else:
+            a = f
+        dispatcher.register(T, a)  # type: ignore
         return f
 
     return core
 
 
-def adapt(obj, protocol):
-    """Turn it into a compatible type."""
+def adapt(obj: Any, protocol: Type[Proto]) -> Proto:
+    """Turn the given obj into something that conforms to the given protocol.
+
+    There are 3 ways to register a handler for the adapter pattern:
+    - implement a __conform__ method on the object
+    - implement a __adapt__ method on the protocol
+    - register a function with register_adapter
+
+    Also note that adapt will automatically handle the case where protocol is Optional, NewType
+    """
     t = type(obj)
     if t is protocol:
         return obj
     if protocol is None:
         raise ValueError("No protocol specified")
+
     try:
-        conform = getattr(obj, "__conform__", None)
-        if conform is not None:
-            r = conform(protocol)
+        conform_fn = getattr(obj, "__conform__", None)
+        if conform_fn is not None:
+            r = conform_fn(protocol)
             if r is not NotImplemented:
                 return r
-        adapt = getattr(protocol, "__adapt__", None)
-        if adapt is not None:
-            r = adapt(obj)
+        adapt_fn = getattr(protocol, "__adapt__", None)
+        if adapt_fn is not None:
+            r = adapt_fn(obj)
             if r is not NotImplemented:
                 return r
     except LiskovViolation:
@@ -60,65 +94,59 @@ def adapt(obj, protocol):
             return obj
     f = adapters[protocol].dispatch(t)
     if f is not None:
-        r = f(obj)
+        r = f(obj, protocol)
         if r is not NotImplemented:
             return r
+    # Optional case
+    X = as_optional(protocol)
+    if X is not None:
+        if obj is None:
+            return None  # type: ignore
+        else:
+            return adapt(obj, X)
+    # unwrap newtypes
+    S = as_newtype(protocol)
+    if S is not None:
+        r = adapt(obj, S)
+        return S(r)
+    # enums
+    # [todo] enums should be handled by register_adapter (but atm there is no subclassing dispatcher on protocol variable.)
+    if issubclass(protocol, Enum):
+        if isinstance(obj, protocol):
+            return obj
+        if isinstance(obj, (int, str)):
+            return protocol(obj)
+
     raise AdaptationError(f"No adapter found for {t} and {protocol}")
 
 
-@classdispatch
-def restore(X, x):
-    """Inverse of adapt.
+def restore(X: Type[T], x: Any) -> T:
+    """Inverse of adapt. It converts the object X to be a member of type x
+
+    [todo] DEPRECATED.
+
+    This calls adapt(x, X), but we add some extra steps because X is a type, and not a protocol.
+    It automatically handles the case where X is Optional, NewType, or an Enum.
+
 
     Args:
         X(type): The type to restore x to.
         x(object): The object to restore.
     """
-    # [todo] abstract this out into an adapter pattern. adapt(x, protocol = X)
-
-    Y = as_optional(X)
-    if Y is not None:
-        if x is None:
-            return x
-        else:
-            return restore(Y, x)
-
-    S = as_newtype(X)
-    if S is not None:
-        r = restore(S, x)
-        return X(r)
-
-    if get_origin(X) is None and isinstance(x, X):
-        return x
-    adapt = getattr(X, "__adapt__", None)
-    if adapt is not None:
-        r = adapt(x)
-        if r is not NotImplemented:
-            return r
-
-    if issubclass(X, Enum):
-        return X(x)
-    if X is bool:
-        return bool(x)
-    raise NotImplementedError(f"Unsupported target type {X}")
+    return adapt(x, X)
 
 
-# [todo] use pydantic
-@restore.register(datetime.datetime)
-def _restore_datetime(T, d):
-    if isinstance(d, datetime.datetime):
-        return d
-    elif isinstance(d, str):
-        return datetime.datetime.fromisoformat(d)
-    else:
-        raise TypeError(f"Unsupported datetime type {type(d)}")
+@register_adapter(str, datetime.datetime)
+def _adapt_str_to_datetime(x):
+    return datetime.datetime.fromisoformat(x)
 
 
-@restore.register(uuid.UUID)
-def _restore_uuid(T, b):
-    if isinstance(b, uuid.UUID):
-        return b
-    elif isinstance(b, bytes):
-        return uuid.UUID(bytes=b)
-    else:
-        raise TypeError(f"Unsupported uuid type {type(b)}")
+@register_adapter(str, uuid.UUID)
+def _adapt_str_to_uuid(x):
+    assert isinstance(x, str)
+    return uuid.UUID(hex=x)
+
+
+@register_adapter(bytes, uuid.UUID)
+def _adapt_bytes_to_uuid(x):
+    return uuid.UUID(bytes=x)
