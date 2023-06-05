@@ -413,11 +413,17 @@ class RpcServer:
                     await self.send(response)
                     continue
                 except ExitNotification as e:
-                    logger.info(f"{self.name} received exit notification, terminating")
+                    logger.info(f"{self.name} received exit notification")
                     return
                 except KeyboardInterrupt as e:
-                    logger.exception(f"recieved kb interrupt, terminating")
+                    logger.info(f"recieved kb interrupt")
                     return
+                except TransportClosedError as e:
+                    logger.error(f"transport closed in error: {e}")
+                    raise e
+                except Exception as e:
+                    logger.exception(f"unhandled exception: {e}")
+                    raise e
         finally:
             logger.info(f"exiting serve_forever loop")
             (_, e, _) = sys.exc_info()  # sys.exception() is 3.11 only
