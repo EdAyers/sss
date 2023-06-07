@@ -4,9 +4,12 @@ import datetime
 from enum import Enum
 from functools import singledispatch
 import inspect
-from typing import Any, Callable, NewType, Type, TypeAlias, TypeVar, Union, get_origin
+from typing import Any, Callable, NewType, Type, TypeVar, Union, get_origin
 import uuid
-
+try:
+    from typing import TypeAlias, TypeVar
+except:
+    from typing_extensions import TypeAlias, TypeVar
 from .dispatch import Dispatcher, classdispatch
 from .type_util import as_newtype, as_optional
 
