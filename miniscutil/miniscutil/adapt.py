@@ -6,6 +6,7 @@ from functools import singledispatch
 import inspect
 from typing import Any, Callable, NewType, Type, TypeVar, Union, get_origin
 import uuid
+
 try:
     from typing import TypeAlias, TypeVar
 except:
@@ -93,8 +94,12 @@ def adapt(obj: Any, protocol: Type[Proto]) -> Proto:
     except LiskovViolation:
         pass
     else:
-        if isinstance(obj, protocol):
-            return obj
+        try:
+            if isinstance(obj, protocol):
+                return obj
+        except TypeError:
+            pass
+
     f = adapters[protocol].dispatch(t)
     if f is not None:
         r = f(obj, protocol)
@@ -119,7 +124,7 @@ def adapt(obj: Any, protocol: Type[Proto]) -> Proto:
             return obj
         if isinstance(obj, (int, str)):
             return protocol(obj)
-
+    # [todo] unions
     raise AdaptationError(f"No adapter found for {t} and {protocol}")
 
 
