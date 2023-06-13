@@ -42,6 +42,7 @@ class LspServer(ExtraRpc):
     @rpc_method("initialize")
     async def on_initialize(self, params: InitializeParams) -> InitializeResult:
         # [todo] inject lsp capabilities here.
+        logger.info(f"initializing LSP server {self.name}")
         return InitializeResult(
             serverInfo=PeerInfo(name=self.name, version=None),
             capabilities=self.capabilities,
@@ -49,7 +50,7 @@ class LspServer(ExtraRpc):
 
     @rpc_method("initialized")
     async def on_client_initialized(self, params):
-        logger.info("client initialized")
+        logger.info("client initialized.")
 
     async def apply_insert_text(
         self, uri: lsp.DocumentUri, position: lsp.Position, text: str, version: int = 0
@@ -90,6 +91,7 @@ class LspServer(ExtraRpc):
     @rpc_method("textDocument/didOpen")
     def on_did_open(self, params: lsp.DidOpenTextDocumentParams):
         item = params.textDocument
+        logger.debug(f"editor opened {item.uri}")
         self.documents[item.uri] = item
 
     @rpc_method("textDocument/didChange")

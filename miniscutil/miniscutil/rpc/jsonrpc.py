@@ -422,7 +422,7 @@ class RpcServer:
                     logger.error(f"transport closed in error: {e}")
                     raise e
                 except Exception as e:
-                    logger.exception(f"unhandled exception: {e}")
+                    logger.exception(f"unhandled {type(e).__name__}:  {e}")
                     raise e
         finally:
             logger.info(f"exiting serve_forever loop")
@@ -492,7 +492,7 @@ class RpcServer:
         except ResponseError as e:
             await self.send(Response(id=req.id, error=e))
         except Exception as e:
-            logger.exception(f"{self} {req} unhandled exception. data:\n{req.params}")
+            logger.exception(f"{self} {req} unhandled {type(e).__name__}:\n{e}")
             await self.send(
                 Response(
                     id=req.id,
