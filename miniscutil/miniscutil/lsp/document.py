@@ -53,10 +53,10 @@ class Position:
     character: int
 
     @classmethod
-    def of_offset(cls, offset: int):
+    def of_offset(cls, offset: int) -> "Position":
         return document_context.get().offset_to_position(offset)
 
-    def to_offset(self):
+    def to_offset(self) -> int:
         return document_context.get().position_to_offset(self)
 
     def __add__(self, offset: Union[int, tuple[int, int]]) -> "Position":
@@ -69,6 +69,10 @@ class Position:
             raise TypeError(
                 f"unsupported operand type(s) for +: 'Position' and '{type(offset)}'"
             )
+
+    def __sub__(self, other: "Position") -> int:
+        assert isinstance(other, Position)
+        return self.to_offset() - other.to_offset()
 
     def __le__(self, other: "Position"):
         assert isinstance(other, Position)
@@ -93,14 +97,18 @@ class Range:
         return cls(Position(l0, c0), Position(l1, c1))
 
     @classmethod
-    def of_pos(cls, pos: Position):
-        return cls(pos, pos)
+    def of_pos(cls, pos: Position, length: int = 0):
+        return cls(pos, pos + length)
 
     def to_offsets(self):
         return self.start.to_offset(), self.end.to_offset()
 
     def __contains__(self, pos: Position):
         return self.start <= pos <= self.end
+
+    def __len__(self):
+        """Gets the length of the range in unicode code points."""
+        return self.end.to_offset() - self.start.to_offset()
 
     @classmethod
     def union(cls, items: Iterable["Range"]):
