@@ -34,6 +34,14 @@ document_context: ContextVar["DocumentContext"] = ContextVar("document_context")
 
 @contextlib.contextmanager
 def setdoc(doc: Union[str, "DocumentContext"]):
+    """Lots of the cursor position logic needs to know what the document is to calculate
+    utf-16 offsets and line-numbers correctly. This sets the 'document context' to the provided document.
+
+    This lets you do things like:
+    - add offsets to positions
+    - apply edits to ranges
+    - find the length in characters of a range.
+    """
     if isinstance(doc, str):
         doc = DocumentContext(doc)
     with set_ctx(document_context, doc):
@@ -86,6 +94,9 @@ class Position:
         assert isinstance(other, Position)
         return (self.line, self.character) < (other.line, other.character)
 
+    def __hash__(self):
+        return hash((self.line, self.character))
+
 
 @dataclass
 class Range:
@@ -109,6 +120,9 @@ class Range:
     def __len__(self):
         """Gets the length of the range in unicode code points."""
         return self.end.to_offset() - self.start.to_offset()
+
+    def __hash__(self):
+        return hash((self.start, self.end))
 
     @classmethod
     def union(cls, items: Iterable["Range"]):
