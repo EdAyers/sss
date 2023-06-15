@@ -124,6 +124,9 @@ class Range:
     def __hash__(self):
         return hash((self.start, self.end))
 
+    def __repr__(self):
+        return f"Range.mk({self.start.line}, {self.start.character}, {self.end.line}, {self.end.character})"
+
     @classmethod
     def union(cls, items: Iterable["Range"]):
         a, b = itertools.tee(items)
