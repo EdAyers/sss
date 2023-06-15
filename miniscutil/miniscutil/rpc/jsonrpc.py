@@ -448,10 +448,15 @@ class RpcServer:
                 logger.error(f"received response for unknown request: {res}")
                 return
             fut = self.my_requests.pop(res.id)
-            if res.error is not None:
-                fut.set_exception(res.error)
+            if fut.done():
+                logger.error(
+                    f"received response for already completed request: {res} {fut}"
+                )
             else:
-                fut.set_result(res.result)
+                if res.error is not None:
+                    fut.set_exception(res.error)
+                else:
+                    fut.set_result(res.result)
         else:
             # this is a request.
             req = ofdict(Request, message)
