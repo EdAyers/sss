@@ -129,16 +129,23 @@ class Range:
 
     @classmethod
     def union(cls, items: Iterable["Range"]):
-        a, b = itertools.tee(items)
-        start = min(r.start for r in a)
-        end = max(r.end for r in b)
+        items = list(items)
+        if len(items) == 0:
+            raise ValueError("cannot union empty list of ranges")
+        start = min(r.start for r in items)
+        end = max(r.end for r in items)
         return cls(start, end)
 
     @classmethod
     def intersection(cls, items: Iterable["Range"]):
-        a, b = itertools.tee(items)
-        start = max(r.start for r in a)
-        end = min(r.end for r in b)
+        items = list(items)
+        if len(items) == 0:
+            # mathematically, the intersection of an empty set of
+            # ranges is the whole number line.
+            # but let's not do that.
+            raise ValueError("cannot intersect empty list of ranges")
+        start = max(r.start for r in items)
+        end = min(r.end for r in items)
         if start > end:
             return None
         return cls(start, end)
@@ -230,7 +237,18 @@ class DocumentContext:
         assert self.position_encoding == PositionEncodingKind.UTF16
         enc = "utf-16-le"
         word_length = 2
-        offset += len(line.encode(enc)[: position.character * word_length].decode(enc))
+        line_encoded = line.encode(enc)
+        line_encoded = line_encoded[: position.character * word_length]
+        try:
+            line_decoded = line_encoded.decode(enc)
+        except UnicodeDecodeError:
+            # this can happen if the line is not valid utf-16.
+            # eg half a surrogate pair?
+            # error for now but should be possible to recover.
+            raise RuntimeError(
+                f"failed to find offset for {position.line}, {position.character} \n{line}"
+            )
+        offset += len(line_decoded)
         return offset
 
     def offset_to_position(self, offset: int) -> Position:

@@ -223,7 +223,8 @@ async def wrap_iterator(
     if callable(it):
         it = await loop.run_in_executor(executor, it)
     while True:
-        result: Any = await loop.run_in_executor(executor, next, it, StopIteration)
-        if result is StopIteration:
+        try:
+            result: Any = await loop.run_in_executor(executor, next, it)
+        except StopIteration:
             return
         yield result

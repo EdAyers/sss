@@ -61,5 +61,10 @@ def test_encoding1():
             assert pos.character == c
 
 
+def test_encoding2():
+    s = "🍓"
+    encoding_prop(s)
+
+
 if __name__ == "__main__":
-    test_encoding1()
+    test_encoding2()
