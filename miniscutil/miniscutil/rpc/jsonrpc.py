@@ -19,7 +19,7 @@ from typing import (
 import inspect
 import warnings
 
-from miniscutil.ofdict import MyJsonEncoder, ofdict
+from miniscutil.ofdict import MyJsonEncoder, ofdict, todict, todict_dataclass
 import json
 from .transport import Transport, TransportClosedError, TransportClosedOK
 
@@ -139,6 +139,12 @@ class Response:
     result: Optional[Any] = field(default=None)
     error: Optional[ResponseError] = field(default=None)
     jsonrpc: str = field(default="2.0")
+
+    def __todict__(self):
+        d = todict_dataclass(self)
+        if "error" not in d and "result" not in d:
+            d["result"] = None
+        return d
 
     def to_bytes(self):
         return encoder.encode(self).encode()
