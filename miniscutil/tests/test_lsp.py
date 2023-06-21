@@ -1,3 +1,4 @@
+import re
 from miniscutil.lsp import LspServer
 from miniscutil.lsp.document import DocumentContext, Position, setdoc
 from miniscutil.misc import set_ctx
@@ -19,7 +20,12 @@ def lsp_server():
     yield LspServer(transport=MockTransport())
 
 
+SURROGATE_KEY = re.compile("[\ud800-\udbff]", re.UNICODE)
+
+
 def encoding_prop(x: str):
+    assert SURROGATE_KEY.match(x) is None, "no surrogate pairs allowed"
+
     with setdoc(x):
         for offset in range(len(x) + 1):
             position = Position.of_offset(offset)
@@ -32,10 +38,13 @@ def test_encoding(x: str):
     encoding_prop(x)
 
 
+SURROGATE_KEY = re.compile("[\ud800-\udbff]", re.UNICODE)
+
+
 # [todo] fails for '\ud800'
 @given(st.characters())
 def test_encoding_chars(x: str):
-    assume(x != "\ud800")
+    assume(SURROGATE_KEY.match(x) is None)
     encoding_prop(x)
 
 
@@ -66,5 +75,18 @@ def test_encoding2():
     encoding_prop(s)
 
 
+def test_encoding3():
+    encoding_prop("𝓅")
+
+
+def test_encoding4():
+    x = "\ud801"
+    with setdoc(x):
+        offset = 1
+        position = Position.of_offset(offset)
+        offset_2 = position.to_offset()
+        assert offset_2 == 0
+
+
 if __name__ == "__main__":
-    test_encoding2()
+    test_encoding4()

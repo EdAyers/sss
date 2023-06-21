@@ -6,6 +6,7 @@ from enum import Enum
 import functools
 import itertools
 from pathlib import Path
+import re
 from typing import Iterable, Optional, Union
 from urllib.parse import urlparse
 
@@ -14,6 +15,9 @@ try:
 except:
     from typing_extensions import TypeAlias, TypeVar
 from miniscutil.misc import set_ctx
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PositionEncodingKind(Enum):
@@ -185,6 +189,9 @@ class TextDocumentContentChangeEvent:
         )
 
 
+SURROGATE_KEY_END = re.compile("[\ud800-\udbff]$", re.UNICODE)
+
+
 @dataclass
 class DocumentContext:
     text: str
@@ -237,7 +244,17 @@ class DocumentContext:
         assert self.position_encoding == PositionEncodingKind.UTF16
         enc = "utf-16-le"
         word_length = 2
-        line_encoded = line.encode(enc)
+        if SURROGATE_KEY_END.match(line) is not None:
+            # caught a half of a surrogate pair.
+            line = line[:-1]
+        try:
+            line_encoded = line.encode(enc)
+        except UnicodeEncodeError:
+            # this can happen if we read half a surrogate pair.
+            logger.exception(
+                f"line is not valid unicode, returning position of line start:\n{line}"
+            )
+            return offset
         line_encoded = line_encoded[: position.character * word_length]
         try:
             line_decoded = line_encoded.decode(enc)
@@ -245,6 +262,7 @@ class DocumentContext:
             # this can happen if the line is not valid utf-16.
             # eg half a surrogate pair?
             # error for now but should be possible to recover.
+
             raise RuntimeError(
                 f"failed to find offset for {position.line}, {position.character} \n{line}"
             )
@@ -262,7 +280,18 @@ class DocumentContext:
         word_length = 2
         acc = s[line_idx - 1] if line_idx > 0 else 0
         line_offset = offset - acc
-        char = len(line[:line_offset].encode(enc))
+        subline = line[:line_offset]
+        if SURROGATE_KEY_END.match(subline) is not None:
+            # caught half a surrogate pair
+            subline = subline[:-1]
+        try:
+            char = len(subline.encode(enc))
+        except UnicodeEncodeError as e:
+            logger.error(
+                f"failed to encode line, falling back to counting bytes:\n{subline}\n{e}"
+            )
+            char = len(subline) * 2
+
         assert char % word_length == 0
         char = char // 2
         return Position(line=line_idx, character=char)

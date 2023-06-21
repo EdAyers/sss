@@ -425,10 +425,10 @@ class RpcServer:
                     logger.info(f"recieved kb interrupt")
                     return
                 except TransportClosedError as e:
-                    logger.error(f"transport closed in error: {e}")
+                    logger.error(f"transport closed in error:\n{e}")
                     raise e
                 except Exception as e:
-                    logger.exception(f"unhandled {type(e).__name__}:  {e}")
+                    logger.exception(f"unhandled {type(e).__name__}:\n{e}")
                     raise e
         finally:
             logger.info(f"exiting serve_forever loop")
