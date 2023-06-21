@@ -50,6 +50,8 @@ class AsyncStreamTransport(Transport):
             line = line.decode().rstrip()
             if line == "":
                 break
+            if ":" not in line:
+                raise TransportError(f"invalid header, expecting a colon:\n{line}'")
             k, v = line.split(":", 1)
             header[k.lower()] = v
         content_length = header.get("content-length")
