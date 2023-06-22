@@ -47,11 +47,20 @@ class AsyncStreamTransport(Transport):
                     raise TransportClosedOK("end of stream")
                 else:
                     raise TransportClosedError(f"unexpected end of stream")
-            line = line.decode().rstrip()
+            try:
+                line = line.decode().rstrip()
+            except UnicodeDecodeError as e:
+                raise TransportError(f"invalid utf-8 in header:\n{line}'")
             if line == "":
                 break
             if ":" not in line:
-                raise TransportError(f"invalid header, expecting a colon:\n{line}'")
+                if "HTTP/" in line:
+                    # [todo] gracefully return a valid http 400 error and a message about
+                    # how to get started with rift.
+                    raise TransportError(
+                        f"Looks like you're trying to use Rift with a web browser. Please read the getting started docs to learn how to use Rift."
+                    )
+                raise TransportError(f"invalid header, expecting a colon:\n{line}")
             k, v = line.split(":", 1)
             header[k.lower()] = v
         content_length = header.get("content-length")

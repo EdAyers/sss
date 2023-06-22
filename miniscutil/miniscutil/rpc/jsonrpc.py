@@ -21,7 +21,12 @@ import warnings
 
 from miniscutil.ofdict import MyJsonEncoder, ofdict, todict, todict_dataclass
 import json
-from .transport import Transport, TransportClosedError, TransportClosedOK
+from .transport import (
+    Transport,
+    TransportClosedError,
+    TransportClosedOK,
+    TransportError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -422,13 +427,16 @@ class RpcServer:
                     logger.info(f"{self.name} received exit notification")
                     return
                 except KeyboardInterrupt as e:
-                    logger.info(f"recieved kb interrupt")
+                    logger.info(f"{self.name} recieved kb interrupt")
                     return
                 except TransportClosedError as e:
-                    logger.error(f"transport closed in error:\n{e}")
+                    logger.error(f"{self.name} transport closed in error:\n{e}")
+                    raise e
+                except TransportError as e:
+                    logger.error(f"{self.name} transport error:\n{e}")
                     raise e
                 except Exception as e:
-                    logger.exception(f"unhandled {type(e).__name__}:\n{e}")
+                    logger.exception(f"{self.name} unhandled {type(e).__name__}:\n{e}")
                     raise e
         finally:
             logger.info(f"exiting serve_forever loop")
