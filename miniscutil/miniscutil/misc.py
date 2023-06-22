@@ -22,7 +22,6 @@ import math
 import functools
 import contextvars
 import contextlib
-from typing_extensions import deprecated
 
 
 X = TypeVar("X")
